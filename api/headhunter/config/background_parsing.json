@@ -1,0 +1,90 @@
+{
+  "enabled": true,
+  "description": "Конфигурация фонового парсинга вакансий HeadHunter для сбора данных по технологиям",
+  "version": "0.2",
+  "updated": "2025-10-30",
+  
+  "schedules": {
+    "languages_every_4h": {
+      "enabled": true,
+      "category": "LANG",
+      "interval": "*/4 hours",
+      "pages": 2,
+      "max_queries": 20,
+      "description": "Парсинг языков программирования каждые 4 часа"
+    },
+    "frameworks_every_6h": {
+      "enabled": true,
+      "category": "FRAMEWORK",
+      "interval": "*/6 hours",
+      "pages": 2,
+      "max_queries": 25,
+      "description": "Парсинг фреймворков каждые 6 часов"
+    },
+    "databases_every_8h": {
+      "enabled": true,
+      "category": "DB",
+      "interval": "*/8 hours",
+      "pages": 2,
+      "max_queries": 15,
+      "description": "Парсинг баз данных каждые 8 часов"
+    },
+    "tools_every_12h": {
+      "enabled": true,
+      "category": "TOOL",
+      "interval": "*/12 hours",
+      "pages": 2,
+      "max_queries": 15,
+      "description": "Парсинг инструментов каждые 12 часов"
+    },
+    "top15_every_2h": {
+      "enabled": true,
+      "interval": "*/2 hours",
+      "top_n": 15,
+      "pages": 1,
+      "get_details": false,
+      "description": "Быстрый парсинг топ-15 самых востребованных технологий каждые 2 часа"
+    },
+    "top30_4times_daily": {
+      "enabled": true,
+      "time": "02:00, 08:00, 14:00, 20:00",
+      "top_n": 30,
+      "categories": ["LANG", "FRAMEWORK"],
+      "pages": 2,
+      "description": "Парсинг топ-30 языков программирования и фреймворков 4 раза в день"
+    },
+    "weekly_comprehensive": {
+      "enabled": true,
+      "time": "Sunday 10:00",
+      "top_n": 50,
+      "use_aliases": true,
+      "pages": 2,
+      "max_queries": 100,
+      "description": "Еженедельный всесторонний парсинг топ-50 технологий всех категорий с использованием алиасов"
+    },
+    "nightly_platforms": {
+      "enabled": true,
+      "category": "PLATFORM",
+      "time": "23:30",
+      "pages": 2,
+      "max_queries": 15,
+      "description": "Ночной парсинг облачных платформ"
+    }
+  },
+  
+  "common_settings": {
+    "area": 113,
+    "delay": 1.5,
+    "get_details": true,
+    "use_aliases": false,
+    "description": "Общие настройки: Россия (area 113), задержка 1.5 сек между запросами, получение деталей вакансий, алиасы отключены по умолчанию"
+  },
+
+  "performance": {
+    "max_concurrent_tasks": 3,
+    "rate_limit": "20/minute",
+    "retry_delay": 60,
+    "description": "Ограничения производительности: макс 3 одновременных задачи, 20 запросов в минуту, повтор через 60 сек при ошибке"
+  }
+}
+

@@ -35,21 +35,21 @@ class Command(BaseCommand):
             return
         status = result.get('status')
         message = result.get('message', '')
-        self.stdout.write(f'\n📋 Статус: {status}')
+        self.stdout.write(f'\nСтатус: {status}')
         if message:
-            self.stdout.write(f'   • {message}')
+            self.stdout.write(f'   - {message}')
         # Если есть ключевые поля вакансии, выводим их
         for key in ['title', 'company_name', 'city', 'salary_from', 'salary_to', 'salary_currency', 'url']:
             if key in result:
-                self.stdout.write(f'   • {key}: {result[key]}')
+                self.stdout.write(f'   - {key}: {result[key]}')
 
     def handle(self, *args, **options):
         vacancy_id = options['vacancy_id']
         force_update = options['force_update']
         task = parse_single_vacancy_task.delay(vacancy_id, force_update)
-        self.stdout.write(f'🚀 Задача Celery отправлена! Task ID: {task.id}')
+        self.stdout.write(f'Задача Celery отправлена! Task ID: {task.id}')
         if options.get('wait'):
-            self.stdout.write('⏳ Ожидание завершения задачи...')
+            self.stdout.write('Ожидание завершения задачи...')
             spinner = ['|', '/', '-', '\\']
             i = 0
             while not task.ready():
@@ -60,9 +60,9 @@ class Command(BaseCommand):
             sys.stdout.write('\r')
             if task.successful():
                 result = task.get()
-                self.stdout.write('✅ Задача завершена!')
+                self.stdout.write('Задача завершена!')
                 self.print_formatted_result(result)
             else:
-                self.stdout.write(f'❌ Ошибка при выполнении задачи: {task.result}')
+                self.stdout.write(f'Ошибка при выполнении задачи: {task.result}')
         else:
             self.stdout.write('Проверьте статус задачи через Celery Flower или Django shell.') 
