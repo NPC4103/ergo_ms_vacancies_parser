@@ -2,7 +2,7 @@ import time
 import requests
 from datetime import datetime
 from django.utils import timezone
-from modules.vacancies_parser.api.headhunter.models import Vacancy
+from .models import Vacancy
 
 
 class HeadHunterParser:
@@ -260,7 +260,7 @@ class HeadHunterParser:
             return None
 
 
-def parse_vacancies_by_text(text_list, area=1, pages=2, delay=1.0, get_details=True):
+def parse_vacancies_by_text(text_list, area=113, pages=2, delay=1.0, get_details=True):
     """
     Парсинг вакансий по списку текстовых запросов
     
@@ -304,14 +304,14 @@ def parse_vacancies_by_text(text_list, area=1, pages=2, delay=1.0, get_details=T
             )
             
             if not search_result:
-                print(f'  ❌ Не удалось получить данные для страницы {page + 1}')
+                print(f'  Не удалось получить данные для страницы {page + 1}')
                 continue
-            
+
             vacancies = search_result.get('items', [])
             query_vacancies += len(vacancies)
-            
+
             if not vacancies:
-                print(f'  ⚠️  Вакансии не найдены на странице {page + 1}')
+                print(f'  Вакансии не найдены на странице {page + 1}')
                 break
             
             # Парсинг каждой вакансии
@@ -371,18 +371,18 @@ def parse_vacancies_by_text(text_list, area=1, pages=2, delay=1.0, get_details=T
                             for field, value in new_data.items():
                                 setattr(existing_vacancy, field, value)
                             existing_vacancy.save()
-                            print('✅ обновлена (новая версия)')
+                            print('обновлена (новая версия)')
                             query_updated_vacancies += 1
                         else:
-                            print('⏭️ без изменений')
+                            print('без изменений')
                     else:
                         # Новая вакансия
                         vacancies_to_save.append(vacancy)
                         existing_hh_ids.add(vacancy_id)
-                        print('✅ новая вакансия')
+                        print('новая вакансия')
                         query_new_vacancies += 1
                 else:
-                    print('❌ ошибка парсинга')
+                    print('ошибка парсинга')
                 
                 # Небольшая задержка между запросами детальной информации
                 if get_details:
@@ -396,14 +396,14 @@ def parse_vacancies_by_text(text_list, area=1, pages=2, delay=1.0, get_details=T
         if vacancies_to_save:
             Vacancy.objects.bulk_create(vacancies_to_save, ignore_conflicts=True)
             new_vacancies = len(vacancies_to_save)
-            print(f'  ✅ Сохранено {new_vacancies} новых вакансий')
+            print(f'  Сохранено {new_vacancies} новых вакансий')
             total_new_vacancies += new_vacancies
         else:
-            print(f'  ℹ️  Новых вакансий не найдено')
-        
+            print(f'  Новых вакансий не найдено')
+
         # Выводим статистику по обновлениям
         if query_updated_vacancies > 0:
-            print(f'  🔄 Создано {query_updated_vacancies} новых версий вакансий')
+            print(f'  Создано {query_updated_vacancies} новых версий вакансий')
             total_updated_vacancies += query_updated_vacancies
         
         total_vacancies += query_vacancies
@@ -530,7 +530,7 @@ def _parse_area(parser, area, existing_hh_ids, pages):
         )
         
         if not search_result:
-            print(f'  ❌ Не удалось получить данные для страницы {page + 1}')
+            print(f'  Не удалось получить данные для страницы {page + 1}')
             continue
         
         vacancies = search_result.get('items', [])
@@ -538,7 +538,7 @@ def _parse_area(parser, area, existing_hh_ids, pages):
         pages_processed += 1
         
         if not vacancies:
-            print(f'  ⚠️  Вакансии не найдены на странице {page + 1}')
+            print(f'  Вакансии не найдены на странице {page + 1}')
             break
         
         # Парсинг каждой вакансии
@@ -563,7 +563,7 @@ def _parse_area(parser, area, existing_hh_ids, pages):
             
             # Проверяем, что у нас есть данные для парсинга
             if not vacancy_data:
-                print('❌ нет данных для парсинга')
+                print('нет данных для парсинга')
                 continue
                 
             vacancy = parser.parse_vacancy(vacancy_data)
@@ -603,17 +603,17 @@ def _parse_area(parser, area, existing_hh_ids, pages):
                         for field, value in new_data.items():
                             setattr(existing_vacancy, field, value)
                         existing_vacancy.save()
-                        print('✅ обновлена (новая версия)')
+                        print('обновлена (новая версия)')
                         total_updated_vacancies += 1
                     else:
-                        print('⏭️ без изменений')
+                        print('без изменений')
                 else:
                     # Новая вакансия
                     vacancies_to_save.append(vacancy)
                     existing_hh_ids.add(vacancy_id)
-                    print('✅ новая вакансия')
+                    print('новая вакансия')
             else:
-                print('❌ ошибка парсинга')
+                print('ошибка парсинга')
             
             # Задержка между запросами детальной информации
             time.sleep(0.1)
@@ -624,12 +624,12 @@ def _parse_area(parser, area, existing_hh_ids, pages):
     
     # Массовое сохранение вакансий
     if vacancies_to_save:
-        print(f'  💾 Сохранение {len(vacancies_to_save)} вакансий в базу данных...')
+        print(f'  Сохранение {len(vacancies_to_save)} вакансий в базу данных...')
         Vacancy.objects.bulk_create(vacancies_to_save, ignore_conflicts=True)
-        print(f'  ✅ Сохранено {len(vacancies_to_save)} вакансий')
+        print(f'  Сохранено {len(vacancies_to_save)} вакансий')
         return total_vacancies, len(vacancies_to_save), total_updated_vacancies, pages_processed
     else:
-        print(f'  ℹ️  Новых вакансий не найдено')
+        print(f'  Новых вакансий не найдено')
         return total_vacancies, 0, total_updated_vacancies, pages_processed
 
 
@@ -649,7 +649,7 @@ def _parse_role(parser, role, existing_hh_ids, pages):
         )
         
         if not search_result:
-            print(f'  ❌ Не удалось получить данные для страницы {page + 1}')
+            print(f'  Не удалось получить данные для страницы {page + 1}')
             continue
         
         vacancies = search_result.get('items', [])
@@ -657,7 +657,7 @@ def _parse_role(parser, role, existing_hh_ids, pages):
         pages_processed += 1
         
         if not vacancies:
-            print(f'  ⚠️  Вакансии не найдены на странице {page + 1}')
+            print(f'  Вакансии не найдены на странице {page + 1}')
             break
         
         # Парсинг каждой вакансии
@@ -682,7 +682,7 @@ def _parse_role(parser, role, existing_hh_ids, pages):
             
             # Проверяем, что у нас есть данные для парсинга
             if not vacancy_data:
-                print('❌ нет данных для парсинга')
+                print('нет данных для парсинга')
                 continue
                 
             vacancy = parser.parse_vacancy(vacancy_data)
@@ -722,17 +722,17 @@ def _parse_role(parser, role, existing_hh_ids, pages):
                         for field, value in new_data.items():
                             setattr(existing_vacancy, field, value)
                         existing_vacancy.save()
-                        print('✅ обновлена (новая версия)')
+                        print('обновлена (новая версия)')
                         total_updated_vacancies += 1
                     else:
-                        print('⏭️ без изменений')
+                        print('без изменений')
                 else:
                     # Новая вакансия
                     vacancies_to_save.append(vacancy)
                     existing_hh_ids.add(vacancy_id)
-                    print('✅ новая вакансия')
+                    print('новая вакансия')
             else:
-                print('❌ ошибка парсинга')
+                print('ошибка парсинга')
             
             # Задержка между запросами детальной информации
             time.sleep(0.1)
@@ -743,10 +743,10 @@ def _parse_role(parser, role, existing_hh_ids, pages):
     
     # Массовое сохранение вакансий
     if vacancies_to_save:
-        print(f'  💾 Сохранение {len(vacancies_to_save)} вакансий в базу данных...')
+        print(f'  Сохранение {len(vacancies_to_save)} вакансий в базу данных...')
         Vacancy.objects.bulk_create(vacancies_to_save, ignore_conflicts=True)
-        print(f'  ✅ Сохранено {len(vacancies_to_save)} вакансий')
+        print(f'  Сохранено {len(vacancies_to_save)} вакансий')
         return total_vacancies, len(vacancies_to_save), total_updated_vacancies, pages_processed
     else:
-        print(f'  ℹ️  Новых вакансий не найдено')
+        print(f'  Новых вакансий не найдено')
         return total_vacancies, 0, total_updated_vacancies, pages_processed 

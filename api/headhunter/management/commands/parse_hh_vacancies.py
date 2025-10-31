@@ -104,7 +104,7 @@ class Command(BaseCommand):
             
             if not os.path.exists(config_path):
                 self.stdout.write(
-                    f'⚠️  Конфигурационный файл не найден: {config_path}'
+                    f'Конфигурационный файл не найден: {config_path}'
                 )
                 return None
             
@@ -112,18 +112,18 @@ class Command(BaseCommand):
                 config = json.load(f)
             
             self.stdout.write(
-                f'✅ Конфигурация загружена из: {config_path}'
+                f'Конфигурация загружена из: {config_path}'
             )
             return config
             
         except json.JSONDecodeError as e:
             self.stdout.write(
-                f'❌ Ошибка парсинга JSON файла: {e}'
+                f'Ошибка парсинга JSON файла: {e}'
             )
             return None
         except Exception as e:
             self.stdout.write(
-                f'❌ Ошибка загрузки конфигурации: {e}'
+                f'Ошибка загрузки конфигурации: {e}'
             )
             return None
     
@@ -132,23 +132,23 @@ class Command(BaseCommand):
             self.stdout.write(f'Результат: {result}')
             return
         if result.get('error'):
-            self.stdout.write(f'❌ Ошибка: {result["error"]}')
+            self.stdout.write(f'Ошибка: {result["error"]}')
             return
         if result.get('mode') == 'universal':
-            self.stdout.write('\n📊 Итоги универсального парсинга:')
-            self.stdout.write(f'   • Обработано регионов: {result.get("areas_processed", "-")}')
-            self.stdout.write(f'   • Обработано ролей: {result.get("roles_processed", "-")}')
-            self.stdout.write(f'   • Обработано страниц: {result.get("pages_processed", "-")}')
-            self.stdout.write(f'   • Всего вакансий: {result.get("total_vacancies", "-")}')
-            self.stdout.write(f'   • Новых вакансий: {result.get("new_vacancies", "-")}')
-            self.stdout.write(f'   • Обновлено вакансий: {result.get("updated_vacancies", "-")}')
-            self.stdout.write(f'   • Всего в базе: {result.get("total_in_db", "-")}')
+            self.stdout.write('\nИтоги универсального парсинга:')
+            self.stdout.write(f'   - Обработано регионов: {result.get("areas_processed", "-")}')
+            self.stdout.write(f'   - Обработано ролей: {result.get("roles_processed", "-")}')
+            self.stdout.write(f'   - Обработано страниц: {result.get("pages_processed", "-")}')
+            self.stdout.write(f'   - Всего вакансий: {result.get("total_vacancies", "-")}')
+            self.stdout.write(f'   - Новых вакансий: {result.get("new_vacancies", "-")}')
+            self.stdout.write(f'   - Обновлено вакансий: {result.get("updated_vacancies", "-")}')
+            self.stdout.write(f'   - Всего в базе: {result.get("total_in_db", "-")}')
         elif result.get('mode') == 'by_text':
-            self.stdout.write('\n📊 Итоги парсинга по запросам:')
-            self.stdout.write(f'   • Всего вакансий: {result.get("total_vacancies", "-")}')
-            self.stdout.write(f'   • Новых вакансий: {result.get("new_vacancies", "-")}')
-            self.stdout.write(f'   • Обновлено вакансий: {result.get("updated_vacancies", "-")}')
-            self.stdout.write(f'   • Всего в базе: {result.get("total_in_db", "-")}')
+            self.stdout.write('\nИтоги парсинга по запросам:')
+            self.stdout.write(f'   - Всего вакансий: {result.get("total_vacancies", "-")}')
+            self.stdout.write(f'   - Новых вакансий: {result.get("new_vacancies", "-")}')
+            self.stdout.write(f'   - Обновлено вакансий: {result.get("updated_vacancies", "-")}')
+            self.stdout.write(f'   - Всего в базе: {result.get("total_in_db", "-")}')
         else:
             self.stdout.write(f'Результат: {result}')
 
@@ -157,7 +157,7 @@ class Command(BaseCommand):
         config = self.load_config(options.get('config'))
         if not config and options.get('use_config_only'):
             self.stdout.write(
-                '❌ Не удалось загрузить конфигурацию, а флаг --use-config-only установлен'
+                'Не удалось загрузить конфигурацию, а флаг --use-config-only установлен'
             )
             return
         # Определяем параметры парсинга
@@ -197,9 +197,9 @@ class Command(BaseCommand):
             areas_only=areas_only,
             config=config
         )
-        self.stdout.write(f'🚀 Задача Celery отправлена! Task ID: {task.id}')
+        self.stdout.write(f'Задача Celery отправлена! Task ID: {task.id}')
         if options.get('wait'):
-            self.stdout.write('⏳ Ожидание завершения задачи...')
+            self.stdout.write('Ожидание завершения задачи...')
             spinner = ['|', '/', '-', '\\']
             i = 0
             while not task.ready():
@@ -210,9 +210,9 @@ class Command(BaseCommand):
             sys.stdout.write('\r')
             if task.successful():
                 result = task.get()
-                self.stdout.write('✅ Задача завершена!')
+                self.stdout.write('Задача завершена!')
                 self.print_formatted_result(result)
             else:
-                self.stdout.write(f'❌ Ошибка при выполнении задачи: {task.result}')
+                self.stdout.write(f'Ошибка при выполнении задачи: {task.result}')
         else:
             self.stdout.write('Проверьте статус задачи через Celery Flower или Django shell.') 
