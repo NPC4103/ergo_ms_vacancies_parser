@@ -1,61 +1,88 @@
+import logging
+
 from celery import shared_task
+from django.apps import apps as django_apps
+from typing import List, Optional, Sequence
+
 from .scripts import parse_vacancies_by_text, parse_all_vacancies, HeadHunterParser
 from .models import Vacancy
 
-@shared_task
+
+logger = logging.getLogger('celery.module.headhunter')
+SKILL_MAP_APP = 'modules.competence_core.api.skill_map'
+
+
+def _skill_map_installed() -> bool:
+    """Проверяет, подключено ли приложение компетенций."""
+    return django_apps.is_installed(SKILL_MAP_APP)
+
+@shared_task(
+    bind=True,
+    max_retries=3,
+    default_retry_delay=60,
+    soft_time_limit=6900,
+    time_limit=7200,
+)
 def parse_hh_vacancies_task(
-    text_list=None,
-    area=113,
-    pages=2,
-    delay=1.0,
-    get_details=True,
-    universal=False,
-    pages_per_area=5,
-    max_total_pages=100,
-    areas_only=False,
-    config=None
+    self,
+    text_list: Optional[Sequence[str]] = None,
+    area: int = 113,
+    pages: int = 2,
+    delay: float = 1.0,
+    get_details: bool = True,
+    universal: bool = False,
+    pages_per_area: int = 5,
+    max_total_pages: int = 100,
+    areas_only: bool = False,
+    config: Optional[dict] = None
 ):
     """
     Celery-задача для парсинга вакансий с HeadHunter.
     Возвращает статистику по результатам парсинга.
     """
-    import logging
+    logger.info(
+        "Запуск задачи parse_hh_vacancies_task: text_list=%s, universal=%s",
+        text_list,
+        universal,
+    )
     
-    # Получаем логгер для модуля
-    logger = logging.getLogger('celery.module.headhunter')
+    if not universal and not text_list:
+        error_msg = 'Необходимо указать text_list или universal=True'
+        logger.error(error_msg)
+        return {'error': error_msg}
     
-    logger.info(f"Запуск задачи parse_hh_vacancies_task с параметрами: text_list={text_list}, universal={universal}")
-    
-    result = None
-    if universal:
-        logger.info("Выполняется универсальный парсинг")
-        result = parse_all_vacancies(
-            pages_per_area=pages_per_area,
-            delay=delay,
-            max_total_pages=max_total_pages,
-            areas_only=areas_only
-        )
-        logger.info(f"Универсальный парсинг завершен: {result}")
-        return {
-            'mode': 'universal',
-            'areas_processed': result.get('areas_processed'),
-            'roles_processed': result.get('roles_processed'),
-            'pages_processed': result.get('pages_processed'),
-            'total_vacancies': result.get('total_vacancies'),
-            'new_vacancies': result.get('new_vacancies'),
-            'updated_vacancies': result.get('updated_vacancies'),
-            'total_in_db': result.get('total_in_db'),
-        }
-    elif text_list:
-        logger.info(f"Выполняется парсинг по тексту: {text_list}")
+    try:
+        if universal:
+            logger.info("Выполняется универсальный парсинг")
+            result = parse_all_vacancies(
+                pages_per_area=pages_per_area,
+                delay=delay,
+                max_total_pages=max_total_pages,
+                areas_only=areas_only
+            )
+            logger.info("Универсальный парсинг завершен")
+            return {
+                'mode': 'universal',
+                'areas_processed': result.get('areas_processed'),
+                'roles_processed': result.get('roles_processed'),
+                'pages_processed': result.get('pages_processed'),
+                'total_vacancies': result.get('total_vacancies'),
+                'new_vacancies': result.get('new_vacancies'),
+                'updated_vacancies': result.get('updated_vacancies'),
+                'total_in_db': result.get('total_in_db'),
+            }
+        
+        assert text_list is not None
+        queries = list(text_list)
+        logger.info("Выполняется парсинг по списку текстов (%d)", len(queries))
         result = parse_vacancies_by_text(
-            text_list=text_list,
+            text_list=queries,
             area=area,
             pages=pages,
             delay=delay,
             get_details=get_details
         )
-        logger.info(f"Парсинг по тексту завершен: {result}")
+        logger.info("Парсинг по тексту завершен")
         return {
             'mode': 'by_text',
             'total_vacancies': result.get('total_vacancies'),
@@ -63,22 +90,27 @@ def parse_hh_vacancies_task(
             'updated_vacancies': result.get('updated_vacancies'),
             'total_in_db': result.get('total_in_db'),
         }
-    else:
-        error_msg = 'Необходимо указать text_list или universal=True'
-        logger.error(error_msg)
-        print(f"ОШИБКА: {error_msg}")  # Дополнительный вывод в консоль
-        return {'error': error_msg}
+    except Exception as exc:
+        logger.error('Ошибка выполнения parse_hh_vacancies_task', exc_info=True)
+        raise self.retry(exc=exc)
 
-@shared_task
+@shared_task(
+    bind=True,
+    max_retries=3,
+    default_retry_delay=120,
+    soft_time_limit=5100,
+    time_limit=5400,
+)
 def parse_vacancies_by_technologies(
-    categories=None,
-    top_n=50,
-    use_aliases=False,
-    area=113,
-    pages=2,
-    delay=1.5,
-    get_details=True,
-    max_queries=None
+    self,
+    categories: Optional[List[str]] = None,
+    top_n: int = 50,
+    use_aliases: bool = False,
+    area: int = 113,
+    pages: int = 2,
+    delay: float = 1.5,
+    get_details: bool = True,
+    max_queries: Optional[int] = None
 ):
     """
     Celery-задача для парсинга вакансий по технологиям из базы данных.
@@ -101,28 +133,21 @@ def parse_vacancies_by_technologies(
     Returns:
         dict: Статистика парсинга
     """
-    import logging
-    
-    logger = logging.getLogger('celery.module.headhunter')
-    
     logger.info('='*70)
     logger.info('Запуск парсинга вакансий по технологиям')
     logger.info('='*70)
     logger.info(f'Параметры: categories={categories}, top_n={top_n}, '
                f'use_aliases={use_aliases}, area={area}, pages={pages}')
     
-    try:
-        # Отложенный импорт генератора технологий, чтобы не падать при старте worker/beat,
-        # если приложение competence_core не подключено в INSTALLED_APPS
-        from django.apps import apps as django_apps
-        if not django_apps.is_installed('modules.competence_core.api.skill_map'):
-            return {'error': 'Приложение modules.competence_core.api.skill_map не подключено'}
+    if not _skill_map_installed():
+        msg = f'Приложение {SKILL_MAP_APP} не подключено'
+        logger.warning(msg)
+        return {'error': msg}
 
+    try:
         from .utils.technology_search_generator import TechnologySearchGenerator
-        # Создаем генератор запросов
         generator = TechnologySearchGenerator()
         
-        # Загружаем технологии
         if categories:
             logger.info(f'Загрузка технологий категорий: {categories}')
             generator.load_technologies(
@@ -137,24 +162,17 @@ def parse_vacancies_by_technologies(
                 include_aliases=use_aliases
             )
         
-        # Получаем статистику по технологиям
         stats = generator.get_statistics()
-        logger.info(f"Загружено технологий: {stats['total_technologies']}")
-        logger.info(f"   По категориям: {stats['by_category']}")
+        logger.info(f"Загружено технологий: {stats.get('total_technologies')}")
         if use_aliases:
-            logger.info(f"   Всего алиасов: {stats['total_aliases']}")
+            logger.info(f"Всего алиасов: {stats.get('total_aliases')}")
         
-        # Генерируем поисковые запросы
         search_queries = generator.generate_search_queries(
             use_aliases=use_aliases,
             max_queries=max_queries
         )
         
-        logger.info(f'Сгенерировано {len(search_queries)} поисковых запросов')
-        logger.info(f'   Первые 10: {search_queries[:10]}')
-        
-        # Запускаем парсинг
-        logger.info('Начинаем парсинг вакансий...')
+        logger.info('Сгенерировано %d поисковых запросов', len(search_queries))
         
         result = parse_vacancies_by_text(
             text_list=search_queries,
@@ -169,23 +187,29 @@ def parse_vacancies_by_technologies(
         
         return {
             'mode': 'by_technologies',
-            'technologies_count': stats['total_technologies'],
+            'technologies_count': stats.get('total_technologies'),
             'search_queries_count': len(search_queries),
-            'search_queries': search_queries[:20],  # Первые 20 для отчета
+            'search_queries': search_queries[:20],
             'total_vacancies': result.get('total_vacancies'),
             'new_vacancies': result.get('new_vacancies'),
             'updated_vacancies': result.get('updated_vacancies'),
             'total_in_db': result.get('total_in_db'),
         }
         
-    except Exception as e:
-        error_msg = f'Ошибка при парсинге по технологиям: {e}'
-        logger.error(error_msg, exc_info=True)
-        return {'error': error_msg}
+    except Exception as exc:
+        logger.error('Ошибка при парсинге по технологиям', exc_info=True)
+        raise self.retry(exc=exc)
 
 
-@shared_task
+@shared_task(
+    bind=True,
+    max_retries=3,
+    default_retry_delay=90,
+    soft_time_limit=3300,
+    time_limit=3600,
+)
 def parse_vacancies_by_category(
+    self,
     category,
     use_aliases=False,
     area=113,
@@ -209,21 +233,16 @@ def parse_vacancies_by_category(
     Returns:
         dict: Статистика парсинга
     """
-    import logging
-    
-    logger = logging.getLogger('celery.module.headhunter')
-    
     logger.info(f'Запуск парсинга по категории: {category}')
     
-    try:
-        from django.apps import apps as django_apps
-        if not django_apps.is_installed('modules.competence_core.api.skill_map'):
-            return {
-                'mode': 'by_category',
-                'category': category,
-                'error': 'Приложение modules.competence_core.api.skill_map не подключено'
-            }
+    if not _skill_map_installed():
+        return {
+            'mode': 'by_category',
+            'category': category,
+            'error': f'Приложение {SKILL_MAP_APP} не подключено'
+        }
 
+    try:
         from .utils.technology_search_generator import TechnologySearchGenerator
         generator = TechnologySearchGenerator()
         
@@ -265,77 +284,80 @@ def parse_vacancies_by_category(
             'total_in_db': result.get('total_in_db'),
         }
         
-    except Exception as e:
-        error_msg = f'Ошибка при парсинге категории {category}: {e}'
-        logger.error(error_msg, exc_info=True)
-        return {'error': error_msg}
+    except Exception as exc:
+        logger.error('Ошибка при парсинге категории %s', category, exc_info=True)
+        raise self.retry(exc=exc)
 
 
-@shared_task
-def parse_single_vacancy_task(vacancy_id, force_update=False):
+@shared_task(
+    bind=True,
+    max_retries=3,
+    default_retry_delay=60,
+    soft_time_limit=1500,
+    time_limit=1800,
+)
+def parse_single_vacancy_task(self, vacancy_id, force_update=False):
     """
     Celery-задача для парсинга одной вакансии по ID.
     Возвращает результат сохранения/обновления.
     """
-    import logging
-    
-    # Получаем логгер для модуля
-    logger = logging.getLogger('celery.module.headhunter')
-    
     logger.info(f"Запуск задачи parse_single_vacancy_task для вакансии {vacancy_id}, force_update={force_update}")
     
-    parser = HeadHunterParser()
-    existing_vacancy = Vacancy.objects.filter(hh_id=vacancy_id).first()
-    if existing_vacancy and not force_update:
-        msg = f'Вакансия {vacancy_id} уже есть в базе'
-        logger.info(msg)
-        return {'status': 'exists', 'message': msg}
-    
-    vacancy_data = parser.get_vacancy_details(vacancy_id)
-    if not vacancy_data or not isinstance(vacancy_data, dict) or 'id' not in vacancy_data:
-        msg = f'Вакансия {vacancy_id} не найдена или данные некорректны'
-        logger.error(msg)
-        return {'status': 'error', 'message': msg}
-    
-    vacancy = parser.parse_vacancy(vacancy_data)
-    if not vacancy:
-        msg = 'Ошибка при парсинге вакансии'
-        logger.error(msg)
-        return {'status': 'error', 'message': msg}
-    if existing_vacancy:
-        if force_update:
-            new_data = {
-                'title': vacancy.title,
-                'company_name': vacancy.company_name,
-                'salary_from': vacancy.salary_from,
-                'salary_to': vacancy.salary_to,
-                'salary_currency': vacancy.salary_currency,
-                'salary_gross': vacancy.salary_gross,
-                'city': vacancy.city,
-                'address': vacancy.address,
-                'description': vacancy.description,
-                'requirements': vacancy.requirements,
-                'responsibilities': vacancy.responsibilities,
-                'employment_type': vacancy.employment_type,
-                'experience_level': vacancy.experience_level,
-                'key_skills': vacancy.key_skills,
-                'schedule_type': vacancy.schedule_type,
-                'professional_role': vacancy.professional_role,
-                'employer_name': vacancy.employer_name,
-                'premium': vacancy.premium,
-                'has_test': vacancy.has_test,
-                'response_letter_required': vacancy.response_letter_required,
-            }
-            if existing_vacancy.has_changes(new_data):
-                existing_vacancy.create_version(new_data)
-                for field, value in new_data.items():
-                    setattr(existing_vacancy, field, value)
-                existing_vacancy.save()
-                return {'status': 'updated', 'message': f'Вакансия {vacancy_id} обновлена'}
-            else:
+    try:
+        parser = HeadHunterParser()
+        vacancy_manager = getattr(Vacancy, 'objects')
+        existing_vacancy = vacancy_manager.filter(hh_id=vacancy_id).first()
+        if existing_vacancy and not force_update:
+            msg = f'Вакансия {vacancy_id} уже есть в базе'
+            logger.info(msg)
+            return {'status': 'exists', 'message': msg}
+        
+        vacancy_data = parser.get_vacancy_details(vacancy_id)
+        if not vacancy_data or not isinstance(vacancy_data, dict) or 'id' not in vacancy_data:
+            msg = f'Вакансия {vacancy_id} не найдена или данные некорректны'
+            logger.error(msg)
+            return {'status': 'error', 'message': msg}
+        
+        vacancy = parser.parse_vacancy(vacancy_data)
+        if not vacancy:
+            msg = 'Ошибка при парсинге вакансии'
+            logger.error(msg)
+            return {'status': 'error', 'message': msg}
+        if existing_vacancy:
+            if force_update:
+                new_data = {
+                    'title': vacancy.title,
+                    'company_name': vacancy.company_name,
+                    'salary_from': vacancy.salary_from,
+                    'salary_to': vacancy.salary_to,
+                    'salary_currency': vacancy.salary_currency,
+                    'salary_gross': vacancy.salary_gross,
+                    'city': vacancy.city,
+                    'address': vacancy.address,
+                    'description': vacancy.description,
+                    'requirements': vacancy.requirements,
+                    'responsibilities': vacancy.responsibilities,
+                    'employment_type': vacancy.employment_type,
+                    'experience_level': vacancy.experience_level,
+                    'key_skills': vacancy.key_skills,
+                    'schedule_type': vacancy.schedule_type,
+                    'professional_role': vacancy.professional_role,
+                    'employer_name': vacancy.employer_name,
+                    'premium': vacancy.premium,
+                    'has_test': vacancy.has_test,
+                    'response_letter_required': vacancy.response_letter_required,
+                }
+                if existing_vacancy.has_changes(new_data):
+                    existing_vacancy.create_version(new_data)
+                    for field, value in new_data.items():
+                        setattr(existing_vacancy, field, value)
+                    existing_vacancy.save()
+                    return {'status': 'updated', 'message': f'Вакансия {vacancy_id} обновлена'}
                 return {'status': 'no_changes', 'message': 'Изменений не обнаружено'}
-        else:
             return {'status': 'exists', 'message': f'Вакансия {vacancy_id} уже есть в базе'}
-    else:
-        vacancy.save()
-        return {'status': 'created', 'message': f'Вакансия {vacancy_id} успешно сохранена'} 
+        else:
+            vacancy.save()
+            return {'status': 'created', 'message': f'Вакансия {vacancy_id} успешно сохранена'}
+    except Exception as exc:
+        logger.error('Ошибка при обработке вакансии %s', vacancy_id, exc_info=True)
+        raise self.retry(exc=exc)

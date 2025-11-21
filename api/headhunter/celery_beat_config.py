@@ -6,7 +6,7 @@
 from typing import Dict, Any
 from celery.schedules import crontab
 
-from core.api.src.core.utils.celery_beat.base import CeleryBeatModuleConfig
+from src.core.utils.celery_beat.base import CeleryBeatModuleConfig
 
 
 class HeadhunterCeleryBeatConfig(CeleryBeatModuleConfig):
@@ -39,7 +39,8 @@ class HeadhunterCeleryBeatConfig(CeleryBeatModuleConfig):
                 },
                 'options': {
                     'queue': 'headhunter',
-                    'priority': 7
+                    'priority': 7,
+                    'expires': 3 * 60 * 60,  # Не запускать следующую задачу, если текущая висит
                 }
             },
             
@@ -60,7 +61,8 @@ class HeadhunterCeleryBeatConfig(CeleryBeatModuleConfig):
                 },
                 'options': {
                     'queue': 'headhunter',
-                    'priority': 6
+                    'priority': 6,
+                    'expires': 4 * 60 * 60,
                 }
             },
             
@@ -81,7 +83,8 @@ class HeadhunterCeleryBeatConfig(CeleryBeatModuleConfig):
                 },
                 'options': {
                     'queue': 'headhunter',
-                    'priority': 5
+                    'priority': 5,
+                    'expires': 5 * 60 * 60,
                 }
             },
             
@@ -102,7 +105,8 @@ class HeadhunterCeleryBeatConfig(CeleryBeatModuleConfig):
                 },
                 'options': {
                     'queue': 'headhunter',
-                    'priority': 4
+                    'priority': 4,
+                    'expires': 6 * 60 * 60,
                 }
             },
             
@@ -124,7 +128,8 @@ class HeadhunterCeleryBeatConfig(CeleryBeatModuleConfig):
                 },
                 'options': {
                     'queue': 'headhunter',
-                    'priority': 6
+                    'priority': 6,
+                    'expires': 2 * 60 * 60,
                 }
             },
             
@@ -145,7 +150,8 @@ class HeadhunterCeleryBeatConfig(CeleryBeatModuleConfig):
                 },
                 'options': {
                     'queue': 'headhunter',
-                    'priority': 3
+                    'priority': 3,
+                    'expires': 20 * 60 * 60,
                 }
             },
             
@@ -167,7 +173,8 @@ class HeadhunterCeleryBeatConfig(CeleryBeatModuleConfig):
                 },
                 'options': {
                     'queue': 'headhunter',
-                    'priority': 8
+                    'priority': 8,
+                    'expires': 90 * 60,  # 1.5 часа
                 }
             },
             
@@ -189,7 +196,8 @@ class HeadhunterCeleryBeatConfig(CeleryBeatModuleConfig):
                 },
                 'options': {
                     'queue': 'headhunter',
-                    'priority': 6
+                    'priority': 6,
+                    'expires': 5 * 60 * 60,
                 }
             },
         }

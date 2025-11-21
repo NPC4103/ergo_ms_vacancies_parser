@@ -6,7 +6,7 @@
 """
 
 import logging
-from typing import List, Dict, Set, Tuple
+from typing import List, Dict, Set, Tuple, Optional
 from django.db.models import Q
 
 from modules.competence_core.api.skill_map.models import Technology, TechnologyCategory
@@ -28,10 +28,10 @@ class TechnologySearchGenerator:
         self.loaded = False
     
     def load_technologies(self, 
-                         categories: List[str] = None,
+                         categories: Optional[List[str]] = None,
                          min_popularity: int = 0,
                          include_aliases: bool = True,
-                         limit: int = None) -> int:
+                         limit: Optional[int] = None) -> int:
         """
         Загрузка технологий из базы данных.
         
@@ -77,8 +77,8 @@ class TechnologySearchGenerator:
     
     def generate_search_queries(self, 
                                 use_aliases: bool = True,
-                                max_queries: int = None,
-                                combine_with_keywords: List[str] = None) -> List[str]:
+                                max_queries: Optional[int] = None,
+                                combine_with_keywords: Optional[List[str]] = None) -> List[str]:
         """
         Генерация списка поисковых запросов.
         
@@ -133,7 +133,7 @@ class TechnologySearchGenerator:
     def generate_by_category(self, 
                            category: str,
                            use_aliases: bool = True,
-                           max_per_category: int = None) -> List[str]:
+                           max_per_category: Optional[int] = None) -> List[str]:
         """
         Генерация запросов для конкретной категории.
         
@@ -155,7 +155,7 @@ class TechnologySearchGenerator:
     
     def generate_grouped_by_category(self, 
                                     use_aliases: bool = True,
-                                    max_per_category: int = None) -> Dict[str, List[str]]:
+                                    max_per_category: Optional[int] = None) -> Dict[str, List[str]]:
         """
         Генерация запросов сгруппированных по категориям.
         
