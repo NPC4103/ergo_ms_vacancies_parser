@@ -245,18 +245,19 @@ class HeadHunterParser:
             return None
             
         try:
-            # Парсим зарплату
-            salary_from = vacancy_data.get('salary', {}).get('from')
-            salary_to = vacancy_data.get('salary', {}).get('to')
-            salary_currency = vacancy_data.get('salary', {}).get('currency')
-            salary_gross = vacancy_data.get('salary', {}).get('gross', True)
+            # Парсим зарплату (безопасно обрабатываем null)
+            salary = vacancy_data.get('salary') or {}
+            salary_from = salary.get('from')
+            salary_to = salary.get('to')
+            salary_currency = salary.get('currency')
+            salary_gross = salary.get('gross', True)
             
-            # Парсим локацию
-            area = vacancy_data.get('area', {})
-            city = area.get('name') if area else None
+            # Парсим локацию (безопасно обрабатываем null)
+            area = vacancy_data.get('area') or {}
+            city = area.get('name')
             
-            # Парсим компанию
-            employer = vacancy_data.get('employer', {})
+            # Парсим компанию (безопасно обрабатываем null)
+            employer = vacancy_data.get('employer') or {}
             company_name = employer.get('name', 'Не указано')
             company_url = employer.get('alternate_url')
             employer_id = employer.get('id')
@@ -312,15 +313,15 @@ class HeadHunterParser:
                 description=description,
                 requirements=requirements,
                 responsibilities=responsibilities,
-                employment_type=vacancy_data.get('employment', {}).get('name') if vacancy_data.get('employment') else None,
-                experience_level=vacancy_data.get('experience', {}).get('name') if vacancy_data.get('experience') else None,
+                employment_type=(vacancy_data.get('employment') or {}).get('name'),
+                experience_level=(vacancy_data.get('experience') or {}).get('name'),
                 skills=[],
                 key_skills=key_skills,
                 hh_id=vacancy_data['id'],
                 url=vacancy_data.get('alternate_url', ''),
                 company_url=company_url,
                 # Дополнительные поля
-                schedule_type=vacancy_data.get('schedule', {}).get('name') if vacancy_data.get('schedule') else None,
+                schedule_type=(vacancy_data.get('schedule') or {}).get('name'),
                 professional_role=self._get_professional_role_name(vacancy_data.get('professional_roles', [])),
                 alternate_url=vacancy_data.get('alternate_url', ''),
                 apply_alternate_url=vacancy_data.get('apply_alternate_url', ''),
@@ -599,8 +600,8 @@ def parse_vacancies_by_text(text_list, area=113, pages=2, delay=1.0, get_details
             for j, vacancy_data in enumerate(vacancies, 1):
                 vacancy_id = vacancy_data.get('id')
                 vacancy_title = vacancy_data.get('name', 'Без названия')
-                company_name = vacancy_data.get('employer', {}).get('name', 'Не указано')
-                city = vacancy_data.get('area', {}).get('name', 'не указан')
+                company_name = (vacancy_data.get('employer') or {}).get('name', 'Не указано')
+                city = (vacancy_data.get('area') or {}).get('name', 'не указан')
                 
                 print(f'    [{j}/{len(vacancies)}] {city} | {vacancy_title} | {company_name}', end=' ')
                 
@@ -856,8 +857,8 @@ def _parse_area(parser, area, existing_hh_ids, pages):
         for j, vacancy_data in enumerate(vacancies, 1):
             vacancy_id = vacancy_data.get('id')
             vacancy_title = vacancy_data.get('name', 'Без названия')
-            company_name = vacancy_data.get('employer', {}).get('name', 'Не указано')
-            city = vacancy_data.get('area', {}).get('name', 'не указан')
+            company_name = (vacancy_data.get('employer') or {}).get('name', 'Не указано')
+            city = (vacancy_data.get('area') or {}).get('name', 'не указан')
             
             print(f'    [{j}/{len(vacancies)}] {city} | {vacancy_title} | {company_name}', end=' ')
             
@@ -988,8 +989,8 @@ def _parse_role(parser, role, existing_hh_ids, pages):
         for j, vacancy_data in enumerate(vacancies, 1):
             vacancy_id = vacancy_data.get('id')
             vacancy_title = vacancy_data.get('name', 'Без названия')
-            company_name = vacancy_data.get('employer', {}).get('name', 'Не указано')
-            city = vacancy_data.get('area', {}).get('name', 'не указан')
+            company_name = (vacancy_data.get('employer') or {}).get('name', 'Не указано')
+            city = (vacancy_data.get('area') or {}).get('name', 'не указан')
             
             print(f'    [{j}/{len(vacancies)}] {city} | {vacancy_title} | {company_name}', end=' ')
             
