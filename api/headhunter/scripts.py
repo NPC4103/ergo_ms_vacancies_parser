@@ -1,3 +1,4 @@
+import re
 import time
 import requests
 from datetime import datetime
@@ -112,6 +113,22 @@ class HeadHunterParser:
             else:
                 published_at = timezone.now()
             
+            # Получаем описание и извлекаем секции
+            description = vacancy_data.get('description', '')
+            
+            # Сначала пробуем получить из snippet (обрезанные данные)
+            requirements = self._get_snippet_field(vacancy_data.get('snippet'), 'requirement')
+            responsibilities = self._get_snippet_field(vacancy_data.get('snippet'), 'responsibility')
+            
+            # Если есть полное описание, пробуем извлечь полные данные
+            if description:
+                extracted = self._extract_sections_from_description(description)
+                # Используем извлечённые данные если они длиннее чем из snippet
+                if extracted['requirements'] and len(extracted['requirements']) > len(requirements or ''):
+                    requirements = extracted['requirements']
+                if extracted['responsibilities'] and len(extracted['responsibilities']) > len(responsibilities or ''):
+                    responsibilities = extracted['responsibilities']
+            
             # Создаем объект вакансии с полными данными
             vacancy = Vacancy(
                 title=vacancy_data.get('name', 'Без названия'),
@@ -122,9 +139,9 @@ class HeadHunterParser:
                 salary_gross=salary_gross,
                 city=city,
                 address=self._get_address_raw(vacancy_data.get('address')),
-                description=vacancy_data.get('description', ''),
-                requirements=self._get_snippet_field(vacancy_data.get('snippet'), 'requirement'),
-                responsibilities=self._get_snippet_field(vacancy_data.get('snippet'), 'responsibility'),
+                description=description,
+                requirements=requirements,
+                responsibilities=responsibilities,
                 employment_type=vacancy_data.get('employment', {}).get('name') if vacancy_data.get('employment') else None,
                 experience_level=vacancy_data.get('experience', {}).get('name') if vacancy_data.get('experience') else None,
                 skills=[],
@@ -181,6 +198,98 @@ class HeadHunterParser:
             if snippet_data and isinstance(snippet_data, dict):
                 return snippet_data.get(field_name, '')
             return ''
+        except Exception:
+            return ''
+    
+    def _extract_sections_from_description(self, description_html):
+        """
+        Извлечение требований и обязанностей из полного HTML-описания вакансии.
+        
+        Args:
+            description_html (str): HTML-описание вакансии
+            
+        Returns:
+            dict: Словарь с ключами 'requirements' и 'responsibilities'
+        """
+        result = {
+            'requirements': '',
+            'responsibilities': ''
+        }
+        
+        if not description_html:
+            return result
+        
+        try:
+            # Паттерны для поиска секций (различные варианты написания)
+            requirements_patterns = [
+                r'(?:требования|требуется|ожидания|что мы ждём|ждём от вас|вы нам подходите|наши требования|мы ожидаем|что нужно знать|необходимые навыки|обязательно)[:\s]*</(?:strong|b|p|h\d)>(.+?)(?=<(?:strong|b|p|h\d)[^>]*>(?:обязанности|условия|мы предлагаем|что предлагаем|будет плюсом|преимущества)|$)',
+                r'<(?:strong|b)[^>]*>(?:требования|требуется|ожидания)[^<]*</(?:strong|b)>(.+?)(?=<(?:strong|b)[^>]*>|$)',
+            ]
+            
+            responsibilities_patterns = [
+                r'(?:обязанности|задачи|вам предстоит|чем предстоит заниматься|что нужно делать|будете заниматься|ваши задачи|основные задачи)[:\s]*</(?:strong|b|p|h\d)>(.+?)(?=<(?:strong|b|p|h\d)[^>]*>(?:требования|условия|мы предлагаем|что предлагаем)|$)',
+                r'<(?:strong|b)[^>]*>(?:обязанности|задачи|вам предстоит)[^<]*</(?:strong|b)>(.+?)(?=<(?:strong|b)[^>]*>|$)',
+            ]
+            
+            # Пробуем найти требования
+            for pattern in requirements_patterns:
+                match = re.search(pattern, description_html, re.IGNORECASE | re.DOTALL)
+                if match:
+                    requirements_html = match.group(1)
+                    result['requirements'] = self._html_to_text(requirements_html)
+                    break
+            
+            # Пробуем найти обязанности
+            for pattern in responsibilities_patterns:
+                match = re.search(pattern, description_html, re.IGNORECASE | re.DOTALL)
+                if match:
+                    responsibilities_html = match.group(1)
+                    result['responsibilities'] = self._html_to_text(responsibilities_html)
+                    break
+            
+        except Exception as e:
+            print(f"Ошибка при извлечении секций из описания: {e}")
+        
+        return result
+    
+    def _html_to_text(self, html_content):
+        """
+        Конвертирует HTML в чистый текст.
+        
+        Args:
+            html_content (str): HTML-контент
+            
+        Returns:
+            str: Чистый текст
+        """
+        if not html_content:
+            return ''
+        
+        try:
+            # Заменяем теги списков на переносы строк
+            text = re.sub(r'<li[^>]*>', '• ', html_content)
+            text = re.sub(r'</li>', '\n', text)
+            text = re.sub(r'<br\s*/?>', '\n', text)
+            text = re.sub(r'</p>', '\n', text)
+            text = re.sub(r'</div>', '\n', text)
+            
+            # Убираем все оставшиеся HTML-теги
+            text = re.sub(r'<[^>]+>', '', text)
+            
+            # Декодируем HTML-сущности
+            text = text.replace('&nbsp;', ' ')
+            text = text.replace('&amp;', '&')
+            text = text.replace('&lt;', '<')
+            text = text.replace('&gt;', '>')
+            text = text.replace('&quot;', '"')
+            text = text.replace('&#39;', "'")
+            
+            # Убираем множественные пробелы и переносы
+            text = re.sub(r'[ \t]+', ' ', text)
+            text = re.sub(r'\n\s*\n', '\n', text)
+            text = text.strip()
+            
+            return text
         except Exception:
             return ''
     
@@ -332,7 +441,12 @@ def parse_vacancies_by_text(text_list, area=113, pages=2, delay=1.0, get_details
                 if get_details and vacancy_id:
                     detailed_vacancy = parser.get_vacancy_details(vacancy_id)
                     if detailed_vacancy:
+                        # Сохраняем snippet из поисковых данных, т.к. в детальных данных его нет
+                        search_snippet = vacancy_data.get('snippet')
                         vacancy_data = detailed_vacancy
+                        # Восстанавливаем snippet если его нет в детальных данных
+                        if search_snippet and not vacancy_data.get('snippet'):
+                            vacancy_data['snippet'] = search_snippet
                 
                 vacancy = parser.parse_vacancy(vacancy_data)
                 if vacancy:
@@ -559,7 +673,12 @@ def _parse_area(parser, area, existing_hh_ids, pages):
             if vacancy_id:
                 detailed_vacancy = parser.get_vacancy_details(vacancy_id)
                 if detailed_vacancy:
+                    # Сохраняем snippet из поисковых данных
+                    search_snippet = vacancy_data.get('snippet')
                     vacancy_data = detailed_vacancy
+                    # Восстанавливаем snippet если его нет в детальных данных
+                    if search_snippet and not vacancy_data.get('snippet'):
+                        vacancy_data['snippet'] = search_snippet
             
             # Проверяем, что у нас есть данные для парсинга
             if not vacancy_data:
@@ -678,7 +797,12 @@ def _parse_role(parser, role, existing_hh_ids, pages):
             if vacancy_id:
                 detailed_vacancy = parser.get_vacancy_details(vacancy_id)
                 if detailed_vacancy:
+                    # Сохраняем snippet из поисковых данных
+                    search_snippet = vacancy_data.get('snippet')
                     vacancy_data = detailed_vacancy
+                    # Восстанавливаем snippet если его нет в детальных данных
+                    if search_snippet and not vacancy_data.get('snippet'):
+                        vacancy_data['snippet'] = search_snippet
             
             # Проверяем, что у нас есть данные для парсинга
             if not vacancy_data:
