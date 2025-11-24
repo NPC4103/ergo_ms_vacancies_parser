@@ -1,22 +1,185 @@
 import re
 import time
+import logging
 import requests
 from datetime import datetime
+from dataclasses import dataclass, field
+from typing import Optional, Dict, Any, List
 from django.utils import timezone
 from .models import Vacancy
+
+
+logger = logging.getLogger('modules.vacancies_parser.headhunter')
+
+
+@dataclass
+class ParsingMetrics:
+    """Метрики парсинга для мониторинга"""
+    start_time: datetime = field(default_factory=timezone.now)
+    requests_count: int = 0
+    successful_requests: int = 0
+    failed_requests: int = 0
+    rate_limits_hit: int = 0
+    new_vacancies: int = 0
+    updated_vacancies: int = 0
+    skipped_vacancies: int = 0
+    errors: List[str] = field(default_factory=list)
+    
+    def record_request(self, success: bool = True):
+        """Записать результат запроса"""
+        self.requests_count += 1
+        if success:
+            self.successful_requests += 1
+        else:
+            self.failed_requests += 1
+    
+    def record_rate_limit(self):
+        """Записать срабатывание rate limit"""
+        self.rate_limits_hit += 1
+    
+    def record_error(self, error_msg: str):
+        """Записать ошибку"""
+        self.errors.append(f"{timezone.now().isoformat()}: {error_msg}")
+        if len(self.errors) > 100:  # Ограничиваем количество ошибок
+            self.errors = self.errors[-100:]
+    
+    def to_dict(self) -> Dict[str, Any]:
+        """Преобразовать в словарь для логирования"""
+        duration = (timezone.now() - self.start_time).total_seconds()
+        return {
+            'duration_seconds': round(duration, 2),
+            'requests_total': self.requests_count,
+            'requests_successful': self.successful_requests,
+            'requests_failed': self.failed_requests,
+            'rate_limits_hit': self.rate_limits_hit,
+            'new_vacancies': self.new_vacancies,
+            'updated_vacancies': self.updated_vacancies,
+            'skipped_vacancies': self.skipped_vacancies,
+            'avg_request_time': round(duration / self.requests_count, 3) if self.requests_count else 0,
+            'success_rate': round(self.successful_requests / self.requests_count * 100, 1) if self.requests_count else 0,
+            'errors_count': len(self.errors)
+        }
+    
+    def log_summary(self):
+        """Вывести сводку в лог"""
+        stats = self.to_dict()
+        logger.info(
+            "Метрики парсинга: %d запросов за %.1f сек, "
+            "новых: %d, обновлено: %d, пропущено: %d, "
+            "rate limits: %d, ошибок: %d",
+            stats['requests_total'],
+            stats['duration_seconds'],
+            stats['new_vacancies'],
+            stats['updated_vacancies'],
+            stats['skipped_vacancies'],
+            stats['rate_limits_hit'],
+            stats['errors_count']
+        )
 
 
 class HeadHunterParser:
     """Парсер для работы с API HeadHunter"""
     
-    def __init__(self):
+    # Константы для rate limiting
+    MAX_RETRIES = 3
+    BASE_DELAY = 1.0
+    MAX_DELAY = 60.0
+    
+    def __init__(self, metrics: Optional[ParsingMetrics] = None):
         self.base_url = "https://api.hh.ru"
         self.headers = {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
         }
+        self.metrics = metrics or ParsingMetrics()
+    
+    def _make_request(
+        self, 
+        url: str, 
+        params: Optional[Dict] = None, 
+        max_retries: Optional[int] = None
+    ) -> Optional[Dict]:
+        """
+        Выполнить HTTP-запрос с обработкой rate limiting и exponential backoff.
+        
+        Args:
+            url: URL для запроса
+            params: Параметры запроса
+            max_retries: Максимальное количество попыток
+            
+        Returns:
+            JSON-ответ или None при ошибке
+        """
+        max_retries = max_retries or self.MAX_RETRIES
+        last_error = None
+        
+        for attempt in range(max_retries):
+            try:
+                response = requests.get(url, params=params, headers=self.headers, timeout=30)
+                
+                # Обработка rate limiting (429 Too Many Requests)
+                if response.status_code == 429:
+                    self.metrics.record_rate_limit()
+                    retry_after = int(response.headers.get('Retry-After', 60))
+                    retry_after = min(retry_after, self.MAX_DELAY)
+                    logger.warning(
+                        "Rate limit достигнут (попытка %d/%d), ожидание %d сек...",
+                        attempt + 1, max_retries, retry_after
+                    )
+                    time.sleep(retry_after)
+                    continue
+                
+                # Обработка 403 Forbidden (возможно бан)
+                if response.status_code == 403:
+                    self.metrics.record_request(success=False)
+                    self.metrics.record_error(f"403 Forbidden для {url}")
+                    logger.error("Доступ запрещён (403). Возможно, временная блокировка IP.")
+                    # Увеличенная пауза при 403
+                    delay = min(self.BASE_DELAY * (2 ** attempt) * 5, self.MAX_DELAY)
+                    time.sleep(delay)
+                    continue
+                
+                # Успешный запрос
+                response.raise_for_status()
+                self.metrics.record_request(success=True)
+                return response.json()
+                
+            except requests.Timeout as e:
+                last_error = e
+                self.metrics.record_request(success=False)
+                self.metrics.record_error(f"Timeout для {url}")
+                logger.warning("Timeout при запросе %s (попытка %d/%d)", url, attempt + 1, max_retries)
+                
+            except requests.ConnectionError as e:
+                last_error = e
+                self.metrics.record_request(success=False)
+                self.metrics.record_error(f"Connection error для {url}")
+                logger.warning("Ошибка соединения %s (попытка %d/%d)", url, attempt + 1, max_retries)
+                
+            except requests.HTTPError as e:
+                last_error = e
+                self.metrics.record_request(success=False)
+                self.metrics.record_error(f"HTTP error {e.response.status_code} для {url}")
+                logger.warning("HTTP ошибка %s: %s", url, e)
+                
+            except requests.RequestException as e:
+                last_error = e
+                self.metrics.record_request(success=False)
+                self.metrics.record_error(str(e))
+                logger.warning("Ошибка запроса %s: %s", url, e)
+            
+            # Exponential backoff перед следующей попыткой
+            if attempt < max_retries - 1:
+                delay = min(self.BASE_DELAY * (2 ** attempt), self.MAX_DELAY)
+                logger.debug("Ожидание %.1f сек перед повторной попыткой...", delay)
+                time.sleep(delay)
+        
+        # Все попытки исчерпаны
+        logger.error("Не удалось выполнить запрос %s после %d попыток: %s", url, max_retries, last_error)
+        return None
     
     def search_vacancies(self, text=None, area=None, experience=None, employment=None, 
-                        schedule=None, professional_role=None, per_page=100, page=0):
+                        schedule=None, professional_role=None, per_page=100, page=0,
+                        only_with_salary=False):
         """
         Поиск вакансий по параметрам
         
@@ -29,13 +192,17 @@ class HeadHunterParser:
             professional_role (int): ID профессиональной роли
             per_page (int): Количество вакансий на странице (максимум 100)
             page (int): Номер страницы
+            only_with_salary (bool): Только вакансии с указанной зарплатой
         """
         params = {
             'per_page': per_page,
             'page': page,
-            'only_with_salary': True,
             'order_by': 'publication_time'
         }
+        
+        # Фильтр по зарплате (опционально)
+        if only_with_salary:
+            params['only_with_salary'] = True
         
         if text:
             params['text'] = text
@@ -50,23 +217,26 @@ class HeadHunterParser:
         if professional_role:
             params['professional_role'] = professional_role
         
-        try:
-            response = requests.get(f"{self.base_url}/vacancies", params=params, headers=self.headers)
-            response.raise_for_status()
-            return response.json()
-        except requests.RequestException as e:
-            print(f"Ошибка при поиске вакансий: {e}")
-            return None
+        return self._make_request(f"{self.base_url}/vacancies", params=params)
     
     def get_vacancy_details(self, vacancy_id):
         """Получение детальной информации о вакансии"""
-        try:
-            response = requests.get(f"{self.base_url}/vacancies/{vacancy_id}", headers=self.headers)
-            response.raise_for_status()
-            return response.json()
-        except requests.RequestException as e:
-            print(f"Ошибка при получении деталей вакансии {vacancy_id}: {e}")
+        return self._make_request(f"{self.base_url}/vacancies/{vacancy_id}")
+    
+    def check_vacancy_exists(self, vacancy_id) -> Optional[Dict]:
+        """
+        Проверить, существует ли вакансия и не архивирована ли она.
+        
+        Args:
+            vacancy_id: ID вакансии на hh.ru
+            
+        Returns:
+            Dict с информацией или None если вакансия не найдена/архивирована
+        """
+        result = self._make_request(f"{self.base_url}/vacancies/{vacancy_id}")
+        if result and result.get('archived'):
             return None
+        return result
     
     def parse_vacancy(self, vacancy_data):
         """Парсинг данных вакансии в модель"""
@@ -295,61 +465,55 @@ class HeadHunterParser:
     
     def get_areas(self):
         """Получение списка всех регионов"""
-        try:
-            response = requests.get(f"{self.base_url}/areas", headers=self.headers)
-            response.raise_for_status()
-            areas = response.json()
-            
-            # Извлекаем основные регионы (страны и крупные города)
-            main_areas = []
-            
-            for country in areas:
-                if country['name'] in ['Россия', 'Российская Федерация']:
-                    main_areas.append({
-                        'id': country['id'],
-                        'name': country['name'],
-                        'type': 'country'
-                    })
-                    
-                    # Добавляем крупные города России
-                    for region in country.get('areas', []):
-                        if region['name'] in ['Москва', 'Санкт-Петербург', 'Новосибирск', 'Екатеринбург', 'Казань', 'Нижний Новгород']:
-                            main_areas.append({
-                                'id': region['id'],
-                                'name': region['name'],
-                                'type': 'city'
-                            })
-            
-            return main_areas
-        except Exception as e:
-            print(f"Ошибка при получении регионов: {e}")
+        areas = self._make_request(f"{self.base_url}/areas")
+        
+        if not areas:
             # Возвращаем основные регионы по умолчанию
             return [
                 {'id': 113, 'name': 'Россия', 'type': 'country'},
                 {'id': 1, 'name': 'Москва', 'type': 'city'},
                 {'id': 2, 'name': 'Санкт-Петербург', 'type': 'city'},
             ]
+        
+        # Извлекаем основные регионы (страны и крупные города)
+        main_areas = []
+        
+        for country in areas:
+            if country['name'] in ['Россия', 'Российская Федерация']:
+                main_areas.append({
+                    'id': country['id'],
+                    'name': country['name'],
+                    'type': 'country'
+                })
+                
+                # Добавляем крупные города России
+                for region in country.get('areas', []):
+                    if region['name'] in ['Москва', 'Санкт-Петербург', 'Новосибирск', 'Екатеринбург', 'Казань', 'Нижний Новгород']:
+                        main_areas.append({
+                            'id': region['id'],
+                            'name': region['name'],
+                            'type': 'city'
+                        })
+        
+        return main_areas
     
     def get_professional_roles(self):
         """Получение списка всех профессиональных ролей"""
-        try:
-            response = requests.get(f"{self.base_url}/professional_roles", headers=self.headers)
-            response.raise_for_status()
-            roles = response.json()
-            
-            # Получаем все роли
-            all_roles = []
-            for category in roles.get('categories', []):
-                for role in category.get('roles', []):
-                    all_roles.append({
-                        'id': role['id'],
-                        'name': role['name']
-                    })
-            
-            return all_roles
-        except Exception as e:
-            print(f"Ошибка при получении ролей: {e}")
+        roles = self._make_request(f"{self.base_url}/professional_roles")
+        
+        if not roles:
             return []
+        
+        # Получаем все роли
+        all_roles = []
+        for category in roles.get('categories', []):
+            for role in category.get('roles', []):
+                all_roles.append({
+                    'id': role['id'],
+                    'name': role['name']
+                })
+        
+        return all_roles
     
     def search_all_vacancies(self, area_id, page=0, per_page=100):
         """Поиск всех вакансий в регионе"""
@@ -359,14 +523,7 @@ class HeadHunterParser:
             'area': area_id,
             'order_by': 'publication_time'
         }
-        
-        try:
-            response = requests.get(f"{self.base_url}/vacancies", params=params, headers=self.headers)
-            response.raise_for_status()
-            return response.json()
-        except requests.RequestException as e:
-            print(f"Ошибка при поиске вакансий в регионе {area_id}: {e}")
-            return None
+        return self._make_request(f"{self.base_url}/vacancies", params=params)
 
 
 def parse_vacancies_by_text(text_list, area=113, pages=2, delay=1.0, get_details=True):
@@ -383,11 +540,13 @@ def parse_vacancies_by_text(text_list, area=113, pages=2, delay=1.0, get_details
     Returns:
         dict: Статистика парсинга
     """
-    parser = HeadHunterParser()
+    # Создаём метрики и парсер
+    metrics = ParsingMetrics()
+    parser = HeadHunterParser(metrics=metrics)
     
     # Загружаем существующие ID для проверки дубликатов
     existing_hh_ids = set(Vacancy.objects.values_list('hh_id', flat=True))
-    print(f'Загружено {len(existing_hh_ids)} существующих вакансий для проверки дубликатов')
+    logger.info('Загружено %d существующих вакансий для проверки дубликатов', len(existing_hh_ids))
     
     total_vacancies = 0
     total_new_vacancies = 0
@@ -400,9 +559,15 @@ def parse_vacancies_by_text(text_list, area=113, pages=2, delay=1.0, get_details
         query_vacancies = 0
         query_new_vacancies = 0
         query_updated_vacancies = 0
+        total_available_pages = pages  # Будет обновлено после первого запроса
         
         for page in range(pages):
-            print(f'  Страница {page + 1} из {pages}...')
+            # Пропускаем страницы, которых не существует
+            if page >= total_available_pages:
+                logger.debug('Страница %d не существует (всего %d)', page + 1, total_available_pages)
+                break
+            
+            print(f'  Страница {page + 1} из {min(pages, total_available_pages)}...')
             
             # Поиск вакансий
             search_result = parser.search_vacancies(
@@ -415,12 +580,19 @@ def parse_vacancies_by_text(text_list, area=113, pages=2, delay=1.0, get_details
             if not search_result:
                 print(f'  Не удалось получить данные для страницы {page + 1}')
                 continue
+            
+            # Обновляем информацию о доступных страницах (только на первой странице)
+            if page == 0:
+                total_found = search_result.get('found', 0)
+                total_available_pages = min(search_result.get('pages', 1), pages, 20)  # API лимит 20 страниц
+                logger.info('Запрос "%s": найдено %d вакансий, доступно %d страниц', 
+                           text, total_found, total_available_pages)
 
             vacancies = search_result.get('items', [])
             query_vacancies += len(vacancies)
 
             if not vacancies:
-                print(f'  Вакансии не найдены на странице {page + 1}')
+                logger.debug('Вакансии не найдены на странице %d', page + 1)
                 break
             
             # Парсинг каждой вакансии
@@ -517,21 +689,28 @@ def parse_vacancies_by_text(text_list, area=113, pages=2, delay=1.0, get_details
 
         # Выводим статистику по обновлениям
         if query_updated_vacancies > 0:
-            print(f'  Создано {query_updated_vacancies} новых версий вакансий')
+            logger.info('Создано %d новых версий вакансий', query_updated_vacancies)
             total_updated_vacancies += query_updated_vacancies
         
         total_vacancies += query_vacancies
         
         # Задержка между запросами
         if i < len(text_list):
-            print(f'  Ожидание {delay} сек перед следующим запросом...')
             time.sleep(delay)
+    
+    # Обновляем метрики
+    metrics.new_vacancies = total_new_vacancies
+    metrics.updated_vacancies = total_updated_vacancies
+    
+    # Логируем сводку
+    metrics.log_summary()
     
     return {
         'total_vacancies': total_vacancies,
         'new_vacancies': total_new_vacancies,
         'updated_vacancies': total_updated_vacancies,
-        'total_in_db': Vacancy.objects.count()
+        'total_in_db': Vacancy.objects.count(),
+        'metrics': metrics.to_dict()
     }
 
 
@@ -548,7 +727,9 @@ def parse_all_vacancies(pages_per_area=5, delay=1.0, max_total_pages=100, areas_
     Returns:
         dict: Статистика парсинга
     """
-    parser = HeadHunterParser()
+    # Создаём метрики и парсер
+    metrics = ParsingMetrics()
+    parser = HeadHunterParser(metrics=metrics)
     
     # Получаем регионы
     areas = parser.get_areas()
@@ -618,6 +799,13 @@ def parse_all_vacancies(pages_per_area=5, delay=1.0, max_total_pages=100, areas_
             if i < len(roles):
                 time.sleep(delay)
     
+    # Обновляем метрики
+    metrics.new_vacancies = total_new_vacancies
+    metrics.updated_vacancies = total_updated_vacancies
+    
+    # Логируем сводку
+    metrics.log_summary()
+    
     return {
         'areas_processed': len(areas),
         'roles_processed': len(roles) if not areas_only else 0,
@@ -625,7 +813,8 @@ def parse_all_vacancies(pages_per_area=5, delay=1.0, max_total_pages=100, areas_
         'total_vacancies': total_vacancies,
         'new_vacancies': total_new_vacancies,
         'updated_vacancies': total_updated_vacancies,
-        'total_in_db': Vacancy.objects.count()
+        'total_in_db': Vacancy.objects.count(),
+        'metrics': metrics.to_dict()
     }
 
 
@@ -635,8 +824,13 @@ def _parse_area(parser, area, existing_hh_ids, pages):
     total_vacancies = 0
     total_updated_vacancies = 0
     pages_processed = 0
+    total_available_pages = pages
     
     for page in range(pages):
+        # Пропускаем страницы, которых не существует
+        if page >= total_available_pages:
+            break
+        
         search_result = parser.search_all_vacancies(
             area_id=area['id'],
             page=page,
@@ -647,12 +841,15 @@ def _parse_area(parser, area, existing_hh_ids, pages):
             print(f'  Не удалось получить данные для страницы {page + 1}')
             continue
         
+        # Обновляем информацию о доступных страницах
+        if page == 0:
+            total_available_pages = min(search_result.get('pages', 1), pages, 20)
+        
         vacancies = search_result.get('items', [])
         total_vacancies += len(vacancies)
         pages_processed += 1
         
         if not vacancies:
-            print(f'  Вакансии не найдены на странице {page + 1}')
             break
         
         # Парсинг каждой вакансии
@@ -758,8 +955,13 @@ def _parse_role(parser, role, existing_hh_ids, pages):
     total_vacancies = 0
     total_updated_vacancies = 0
     pages_processed = 0
+    total_available_pages = pages
     
     for page in range(pages):
+        # Пропускаем страницы, которых не существует
+        if page >= total_available_pages:
+            break
+        
         # Поиск вакансий по роли
         search_result = parser.search_vacancies(
             professional_role=role['id'],
@@ -771,12 +973,15 @@ def _parse_role(parser, role, existing_hh_ids, pages):
             print(f'  Не удалось получить данные для страницы {page + 1}')
             continue
         
+        # Обновляем информацию о доступных страницах
+        if page == 0:
+            total_available_pages = min(search_result.get('pages', 1), pages, 20)
+        
         vacancies = search_result.get('items', [])
         total_vacancies += len(vacancies)
         pages_processed += 1
         
         if not vacancies:
-            print(f'  Вакансии не найдены на странице {page + 1}')
             break
         
         # Парсинг каждой вакансии

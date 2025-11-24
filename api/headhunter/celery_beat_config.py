@@ -200,6 +200,24 @@ class HeadhunterCeleryBeatConfig(CeleryBeatModuleConfig):
                     'expires': 5 * 60 * 60,
                 }
             },
+            
+            # ============================================================
+            # ПРОВЕРКА СТАТУСА ВАКАНСИЙ (ежедневно в 04:00)
+            # ============================================================
+            'hh-check-vacancies-status-daily': {
+                'task': 'modules.vacancies_parser.api.headhunter.tasks.check_vacancies_status_task',
+                'schedule': crontab(hour=4, minute=0),  # Каждый день в 4:00
+                'kwargs': {
+                    'batch_size': 100,
+                    'delay': 0.2,
+                    'max_vacancies': 500  # Проверяем до 500 вакансий за раз
+                },
+                'options': {
+                    'queue': 'headhunter',
+                    'priority': 2,  # Низкий приоритет
+                    'expires': 6 * 60 * 60,  # 6 часов
+                }
+            },
         }
     
     def get_additional_beat_config(self) -> Dict[str, Any]:
