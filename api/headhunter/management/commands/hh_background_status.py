@@ -62,7 +62,7 @@ class Command(BaseCommand):
         self.stdout.write('Для запуска Celery Beat:')
         self.stdout.write('   api start_celery_beat')
         self.stdout.write('\nДля ручного запуска парсинга:')
-        self.stdout.write('   python src/manage.py parse_hh_by_technologies --category LANG --wait')
+        self.stdout.write('   api parse_hh_by_technologies --category LANG --wait')
         self.stdout.write('\nДля просмотра логов Beat:')
         self.stdout.write('   Get-Content logs/celery_beat.log -Tail 50')
         self.stdout.write()
