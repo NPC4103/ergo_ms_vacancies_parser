@@ -4,7 +4,7 @@
 """
 
 from typing import Dict, Any
-from core.api.src.core.utils.celery.base import CeleryModuleConfig
+from src.core.utils.celery.base import CeleryModuleConfig
 
 
 class HabrCareerCeleryConfig(CeleryModuleConfig):
@@ -12,7 +12,7 @@ class HabrCareerCeleryConfig(CeleryModuleConfig):
     Конфигурация Celery для модуля парсинга Habr Career.
     """
     
-    def get_task_routes(self) -> Dict[str, str]:
+    def get_task_routes(self) -> Dict[str, Dict[str, Any]]:
         """Маршруты задач для парсинга Habr Career"""
         return {
             'modules.vacancies_parser.api.habr_career.tasks.*': {'queue': 'habr_career'},

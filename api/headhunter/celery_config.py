@@ -5,14 +5,14 @@
 
 from typing import Dict, Any
 
-from core.api.src.core.utils.celery.base import CeleryModuleConfig
+from src.core.utils.celery.base import CeleryModuleConfig
 
 class HeadhunterCeleryConfig(CeleryModuleConfig):
     """
     Конфигурация Celery для модуля парсинга HeadHunter.
     """
     
-    def get_task_routes(self) -> Dict[str, str]:
+    def get_task_routes(self) -> Dict[str, Dict[str, Any]]:
         """Маршруты задач для парсинга HeadHunter"""
         return {
             'modules.vacancies_parser.api.headhunter.tasks.*': {'queue': 'headhunter'},
@@ -40,6 +40,16 @@ class HeadhunterCeleryConfig(CeleryModuleConfig):
                 'soft_time_limit': 1500,  # Мягкий таймаут 25 минут
                 'rate_limit': '100/h',  # Максимум 100 задач в час
             },
+            'modules.vacancies_parser.api.headhunter.tasks.parse_vacancies_by_technologies': {
+                'time_limit': 5400,   # Таймаут 1.5 часа
+                'soft_time_limit': 5100,  # Мягкий таймаут 1 час 25 минут
+                'rate_limit': '60/h',  # Максимум 60 задач в час
+            },
+            'modules.vacancies_parser.api.headhunter.tasks.parse_vacancies_by_category': {
+                'time_limit': 3600,   # Таймаут 1 час
+                'soft_time_limit': 3300,  # Мягкий таймаут 55 минут
+                'rate_limit': '60/h',  # Максимум 60 задач в час
+            },
         }
     
     def get_module_loggers(self) -> Dict[str, Any]:
@@ -58,11 +68,6 @@ class HeadhunterCeleryConfig(CeleryModuleConfig):
         """Создает специализированный логгер для модуля"""
         import logging
         return logging.getLogger(f'celery.module.{self.module_name}.{logger_name}')
-    
-    def get_additional_config(self) -> Dict[str, Any]:
-        """Дополнительные настройки для модуля парсинга HeadHunter"""
-        return {
-            'headhunter_max_concurrent_tasks': 5,
-            'headhunter_rate_limit': '10/m',  # 10 запросов в минуту
-            'headhunter_retry_delay': 60,  # Задержка между повторами 60 секунд
-        } 
+
+    def get_max_concurrent_tasks(self) -> int:
+        return 3  # Максимум 3 одновременных задачи
