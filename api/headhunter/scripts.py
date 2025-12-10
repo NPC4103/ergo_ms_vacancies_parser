@@ -848,22 +848,47 @@ class HeadHunterParser:
         
         return main_areas
     
-    def get_professional_roles(self):
-        """Получение списка всех профессиональных ролей"""
+    def get_professional_roles(self, category_id: Optional[str] = None):
+        """
+        Получение списка профессиональных ролей.
+
+        Args:
+            category_id: ID категории для фильтрации (например, '11' для IT).
+                        Если не задан, возвращаются все роли всех категорий.
+        """
         roles = self._make_request(f"{self.base_url}/professional_roles")
         
         if not roles:
             return []
         
+        categories = roles.get('categories', [])
+
+        if category_id:
+            target_category = next(
+                (category for category in categories if str(category.get('id')) == str(category_id)),
+                None
+            )
+            if not target_category:
+                logger.warning('Категория профессиональных ролей %s не найдена', category_id)
+                return []
+
+            return [
+                {
+                    'id': role['id'],
+                    'name': role['name']
+                }
+                for role in target_category.get('roles', [])
+            ]
+
         # Получаем все роли
         all_roles = []
-        for category in roles.get('categories', []):
+        for category in categories:
             for role in category.get('roles', []):
                 all_roles.append({
                     'id': role['id'],
                     'name': role['name']
                 })
-        
+
         return all_roles
     
     def search_all_vacancies(self, area_id, page=0, per_page=100):

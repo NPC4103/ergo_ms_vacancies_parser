@@ -1,7 +1,9 @@
+import json
 import logging
 import time
 import random
 from datetime import datetime, date, timedelta
+from pathlib import Path
 from typing import List, Optional, Sequence, Dict, Any, Tuple
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from functools import partial
@@ -18,6 +20,22 @@ from .models import Vacancy
 
 logger = logging.getLogger('modules.vacancies_parser.headhunter')
 SKILL_MAP_APP = 'modules.competence_core.api.skill_map'
+PROFESSIONAL_ROLES_CONFIG = Path(__file__).parent / 'config' / 'professional_roles_config.json'
+
+
+def _load_target_category_id() -> Optional[str]:
+    """
+    Загружает ID целевой категории ролей (для IT) из конфигурации.
+    Возвращает None, если конфиг недоступен или ID не задан.
+    """
+    try:
+        with open(PROFESSIONAL_ROLES_CONFIG, 'r', encoding='utf-8') as config_file:
+            config_data = json.load(config_file)
+        category_id = config_data.get('target_category', {}).get('id')
+        return str(category_id) if category_id else None
+    except Exception as exc:
+        logger.warning('Не удалось загрузить target_category.id из конфига: %s', exc)
+        return None
 
 
 @shared_task(
@@ -1971,11 +1989,15 @@ def get_professional_roles_task(self):
     try:
         logger.info('Начало выполнения задачи получения профессиональных ролей')
 
+        target_category_id = _load_target_category_id()
+        if target_category_id:
+            logger.info('Фильтрация ролей по категории %s (ожидается IT)', target_category_id)
+
         # Создаем парсер
         parser = HeadHunterParser()
 
-        # Получаем роли
-        roles = parser.get_professional_roles()
+        # Получаем роли (ограничиваемся целевой категорией, если указана)
+        roles = parser.get_professional_roles(category_id=target_category_id)
 
         if roles is None:
             logger.error('Не удалось получить профессиональные роли - ответ None')
@@ -1997,7 +2019,16 @@ def get_professional_roles_task(self):
         raw_data = parser._make_request(f"{parser.base_url}/professional_roles")
         categories_count = 0
         if raw_data and 'categories' in raw_data:
-            categories_count = len(raw_data['categories'])
+            if target_category_id:
+                categories_count = 1 if any(
+                    str(category.get('id')) == target_category_id
+                    for category in raw_data['categories']
+                ) else 0
+            else:
+                categories_count = len(raw_data['categories'])
+        elif target_category_id:
+            # Если не смогли получить категории, но фильтр указан и роли есть
+            categories_count = 1
 
         total_roles = len(roles)
 
