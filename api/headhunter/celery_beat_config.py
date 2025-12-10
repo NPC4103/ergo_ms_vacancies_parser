@@ -472,6 +472,78 @@ class HeadhunterCeleryBeatConfig(CeleryBeatModuleConfig):
                     'expires': 6 * 60 * 60,
                 }
             },
+
+            # ============================================================
+            # АКТУАЛИЗАЦИЯ СПРАВОЧНИКА ПРОФЕССИОНАЛЬНЫХ РОЛЕЙ (еженедельно)
+            # ============================================================
+            'hh-update-professional-roles': {
+                'task': 'modules.vacancies_parser.api.headhunter.tasks.get_professional_roles_task',
+                'schedule': crontab(minute=30, hour=6, day_of_week='sunday'),
+                'kwargs': {},
+                'options': {
+                    'queue': 'headhunter',
+                    'priority': 1,
+                    'expires': 24 * 60 * 60,
+                }
+            },
+
+            # ============================================================
+            # ПАРСИНГ ПО ПРОФЕССИОНАЛЬНЫМ РОЛЯМ IT
+            # ============================================================
+            'hh-professional-roles-comprehensive': {
+                'task': 'modules.vacancies_parser.api.headhunter.tasks.parse_vacancies_by_professional_roles',
+                'schedule': crontab(minute=0, hour=3, day_of_week='monday'),
+                'kwargs': {
+                    'area': 113,
+                    'pages': 5,
+                    'delay': 3.0,
+                    'get_details': True,
+                    'max_concurrent_roles': 3,
+                    'batch_size': 5,
+                    'force_refresh_roles': False
+                },
+                'options': {
+                    'queue': 'headhunter',
+                    'priority': 9,
+                    'expires': 48 * 60 * 60,
+                }
+            },
+            'hh-professional-roles-daily': {
+                'task': 'modules.vacancies_parser.api.headhunter.tasks.parse_vacancies_by_professional_roles',
+                'schedule': crontab(minute=0, hour=9, day_of_week='tuesday,wednesday,thursday,friday'),
+                'kwargs': {
+                    'area': 113,
+                    'pages': 2,
+                    'delay': 2.0,
+                    'get_details': True,
+                    'max_concurrent_roles': 5,
+                    'batch_size': 8,
+                    'force_refresh_roles': False
+                },
+                'options': {
+                    'queue': 'headhunter',
+                    'priority': 8,
+                    'expires': 24 * 60 * 60,
+                }
+            },
+            'hh-professional-roles-quick-scan': {
+                'task': 'modules.vacancies_parser.api.headhunter.tasks.parse_vacancies_by_professional_roles',
+                'schedule': crontab(minute=30, hour=14, day_of_week='saturday'),
+                'kwargs': {
+                    'area': 113,
+                    'pages': 1,
+                    'delay': 1.5,
+                    'get_details': False,
+                    'max_concurrent_roles': 8,
+                    'batch_size': 10,
+                    'force_refresh_roles': False
+                },
+                'options': {
+                    'queue': 'headhunter',
+                    'priority': 6,
+                    'expires': 12 * 60 * 60,
+                }
+            },
         }
     
     def get_additional_beat_config(self) -> Dict[str, Any]:

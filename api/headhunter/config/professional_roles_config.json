@@ -1,0 +1,86 @@
+{
+  "enabled": true,
+  "description": "Конфигурация парсинга вакансий по профессиональным ролям IT",
+  "version": "1.0",
+  "updated": "2025-12-01",
+
+  "target_category": {
+    "id": "11",
+    "name": "Информационные технологии",
+    "description": "Категория IT - парсинг только по указанным ролям"
+  },
+
+  "parsing_settings": {
+    "area": 113,
+    "pages": 3,
+    "delay": 2.0,
+    "get_details": true,
+    "max_concurrent_roles": 5,
+    "batch_size": 10,
+    "description": "Настройки парсинга: Россия, 3 страницы, полные детали, батчи по 10 ролей"
+  },
+
+  "schedules": {
+    "it_roles_comprehensive": {
+      "enabled": true,
+      "interval": "daily 02:00",
+      "description": "Полный парсинг всех IT ролей ночью",
+      "priority": 8,
+      "pages": 5,
+      "get_details": true,
+      "max_concurrent_roles": 3,
+      "batch_delay": 5.0
+    },
+    "it_roles_quick_scan": {
+      "enabled": true,
+      "interval": "weekdays 08:00, 14:00, 20:00",
+      "description": "Быстрый скан IT ролей 3 раза в рабочие дни",
+      "priority": 7,
+      "pages": 2,
+      "get_details": false,
+      "max_concurrent_roles": 8,
+      "batch_delay": 2.0
+    },
+    "it_roles_weekend": {
+      "enabled": true,
+      "interval": "weekend 10:00, 18:00",
+      "description": "Парсинг IT ролей в выходные",
+      "priority": 6,
+      "pages": 3,
+      "get_details": true,
+      "max_concurrent_roles": 5,
+      "batch_delay": 3.0
+    }
+  },
+
+  "performance": {
+    "max_concurrent_tasks": 3,
+    "rate_limit_per_minute": 20,
+    "retry_delay_seconds": 120,
+    "night_mode": {
+      "enabled": true,
+      "hours": "01:00-05:00",
+      "max_concurrent_tasks": 5,
+      "rate_limit_per_minute": 30,
+      "description": "Ночью можно парсить интенсивнее для полного сканирования"
+    },
+    "description": "Производительность: до 3 параллельных задач днем, 5 ночью"
+  },
+
+  "role_filters": {
+    "use_static_file": true,
+    "static_file": "it_professional_roles.json",
+    "exclude_roles": [],
+    "include_only": null,
+    "description": "Роли берутся из статического файла it_professional_roles.json"
+  },
+
+  "data_collection": {
+    "collect_salary_stats": true,
+    "collect_company_info": true,
+    "collect_requirements": true,
+    "collect_responsibilities": true,
+    "collect_benefits": true,
+    "description": "Сбор всех доступных данных о вакансиях"
+  }
+}

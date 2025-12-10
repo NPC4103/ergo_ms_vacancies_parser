@@ -8,8 +8,9 @@ import logging
 from datetime import timedelta
 
 from django.core.management.base import BaseCommand
+from django.core.management.color import no_style
 from django.utils import timezone
-from django.db import transaction
+from django.db import transaction, connection
 
 from modules.vacancies_parser.api.headhunter.models import (
     Vacancy,
@@ -22,6 +23,19 @@ logger = logging.getLogger('modules.vacancies_parser.headhunter')
 
 class Command(BaseCommand):
     help = 'Очистка таблицы вакансий HeadHunter'
+
+    def _reset_sequences(self):
+        """Сбрасывает sequence первичных ключей для моделей вакансий."""
+        models_to_reset = [Vacancy, VacancyVersion, VacancyChangeHistory]
+        sql_statements = connection.ops.sequence_reset_sql(no_style(), models_to_reset)
+        if not sql_statements:
+            return
+
+        with connection.cursor() as cursor:
+            for statement in sql_statements:
+                cursor.execute(statement)
+        
+        self.stdout.write(self.style.SUCCESS('Секвенции успешно сброшены.'))
 
     def add_arguments(self, parser):
         parser.add_argument(
@@ -169,17 +183,79 @@ class Command(BaseCommand):
             with transaction.atomic():
                 self.stdout.write('Удаление...')
                 
-                # Удаляем вакансии (связанные записи удалятся автоматически через CASCADE)
-                deleted_count, deleted_details = queryset.delete()
+                # Получаем ID вакансий для удаления
+                vacancy_ids = list(queryset.values_list('id', flat=True))
+                
+                if not vacancy_ids:
+                    self.stdout.write(self.style.WARNING('Нет вакансий для удаления.'))
+                    return
+                
+                # Удаляем связанные записи явно (на случай проблем с CASCADE)
+                self.stdout.write('Удаление связанных записей...')
+                
+                # Удаляем историю изменений
+                history_deleted = VacancyChangeHistory.objects.filter(
+                    vacancy_id__in=vacancy_ids
+                ).delete()
+                self.stdout.write(f'  - Удалено записей истории: {history_deleted[0]}')
+                
+                # Удаляем версии
+                versions_deleted = VacancyVersion.objects.filter(
+                    vacancy_id__in=vacancy_ids
+                ).delete()
+                self.stdout.write(f'  - Удалено версий: {versions_deleted[0]}')
+                
+                # Удаляем вакансии порциями для надежности
+                self.stdout.write('Удаление вакансий...')
+                batch_size = 1000
+                total_deleted = 0
+                
+                for i in range(0, len(vacancy_ids), batch_size):
+                    batch_ids = vacancy_ids[i:i + batch_size]
+                    deleted_count, deleted_details = Vacancy.objects.filter(
+                        id__in=batch_ids
+                    ).delete()
+                    total_deleted += deleted_count
+                    
+                    if len(vacancy_ids) > batch_size:
+                        self.stdout.write(
+                            f'  - Удалено {total_deleted} из {len(vacancy_ids)} вакансий...'
+                        )
                 
                 self.stdout.write('')
                 self.stdout.write(self.style.SUCCESS('=== УДАЛЕНИЕ ЗАВЕРШЕНО ==='))
-                self.stdout.write(f'Всего удалено объектов: {deleted_count}')
+                self.stdout.write(f'Всего удалено объектов: {total_deleted + history_deleted[0] + versions_deleted[0]}')
+                self.stdout.write(f'  - Вакансий: {total_deleted}')
+                self.stdout.write(f'  - Версий: {versions_deleted[0]}')
+                self.stdout.write(f'  - Записей истории: {history_deleted[0]}')
                 
-                if deleted_details:
-                    self.stdout.write('Детализация:')
-                    for model, count in deleted_details.items():
-                        self.stdout.write(f'  - {model}: {count}')
+                # Проверяем, что все удалено
+                remaining_vacancies = Vacancy.objects.filter(id__in=vacancy_ids).count()
+                if remaining_vacancies > 0:
+                    self.stdout.write(self.style.WARNING(
+                        f'ВНИМАНИЕ! Осталось {remaining_vacancies} вакансий, которые не были удалены!'
+                    ))
+                    # Пытаемся удалить оставшиеся напрямую через SQL
+                    remaining_ids = list(Vacancy.objects.filter(id__in=vacancy_ids).values_list('id', flat=True))
+                    if remaining_ids:
+                        with connection.cursor() as cursor:
+                            # Используем правильный синтаксис для PostgreSQL
+                            placeholders = ','.join(['%s'] * len(remaining_ids))
+                            table_name = Vacancy._meta.db_table
+                            cursor.execute(
+                                f'DELETE FROM {table_name} WHERE id IN ({placeholders})',
+                                remaining_ids
+                            )
+                            sql_deleted = cursor.rowcount
+                            if sql_deleted > 0:
+                                self.stdout.write(self.style.SUCCESS(
+                                    f'Удалено через SQL: {sql_deleted} вакансий'
+                                ))
+                
+                # Сбрасываем секвенции
+                self.stdout.write('')
+                self.stdout.write('Сброс секвенций...')
+                self._reset_sequences()
                 
                 # Выводим текущее состояние
                 self.stdout.write('')
@@ -189,12 +265,15 @@ class Command(BaseCommand):
                 self.stdout.write(f'  - Записей истории: {VacancyChangeHistory.objects.count()}')
                 
                 logger.info(
-                    'Очистка вакансий выполнена: удалено %d вакансий, фильтры: %s',
-                    deleted_count,
+                    'Очистка вакансий выполнена: удалено %d вакансий, %d версий, %d записей истории, фильтры: %s',
+                    total_deleted,
+                    versions_deleted[0],
+                    history_deleted[0],
                     ', '.join(filters_applied)
                 )
                 
         except Exception as e:
             self.stdout.write(self.style.ERROR(f'Ошибка при удалении: {e}'))
             logger.exception('Ошибка при очистке вакансий')
+            raise
 

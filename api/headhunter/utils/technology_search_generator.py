@@ -47,7 +47,7 @@ class TechnologySearchGenerator:
         logger.info('Загрузка технологий для генерации поисковых запросов...')
         
         # Формируем запрос
-        query = Technology.objects.all()
+        query = Technology.objects.all()  # type: ignore[attr-defined]
         
         # Фильтрация по категориям
         if categories:
@@ -78,7 +78,8 @@ class TechnologySearchGenerator:
     def generate_search_queries(self, 
                                 use_aliases: bool = True,
                                 max_queries: Optional[int] = None,
-                                combine_with_keywords: Optional[List[str]] = None) -> List[str]:
+                                combine_with_keywords: Optional[List[str]] = None,
+                                include_duplicate_aliases: bool = False) -> List[str]:
         """
         Генерация списка поисковых запросов.
         
@@ -87,6 +88,7 @@ class TechnologySearchGenerator:
             max_queries (int): Максимальное количество запросов
             combine_with_keywords (List[str]): Дополнительные ключевые слова для комбинации
                                               (например, ['разработчик', 'developer'])
+            include_duplicate_aliases (bool): Включать ли алиасы, которые точно совпадают с названием
         
         Returns:
             List[str]: Список поисковых запросов
@@ -95,38 +97,53 @@ class TechnologySearchGenerator:
             self.load_technologies()
         
         queries = []
+        skipped_aliases_exact_duplicate = 0
+        total_aliases_count = 0
         
         for tech in self.technologies:
             # Добавляем основное название
             queries.append(tech.name)
             
-            # Добавляем алиасы
+            # Добавляем алиасы (учитываем регистр - добавляем все, даже если отличаются только регистром)
             if use_aliases and hasattr(tech, 'aliases'):
                 for alias_obj in tech.aliases.all():
                     alias = alias_obj.alias
-                    # Добавляем только если алиас существенно отличается от основного названия
-                    if alias.lower() != tech.name.lower():
+                    total_aliases_count += 1
+                    # Добавляем алиас если он не совпадает с названием, или если включен флаг include_duplicate_aliases
+                    if alias != tech.name or include_duplicate_aliases:
                         queries.append(alias)
+                    else:
+                        skipped_aliases_exact_duplicate += 1
             
             # Комбинируем с ключевыми словами
             if combine_with_keywords:
                 for keyword in combine_with_keywords:
                     queries.append(f"{tech.name} {keyword}")
         
-        # Убираем дубликаты, сохраняя порядок
+        total_before_dedup = len(queries)
+        
+        # Убираем только точные дубликаты (с учетом регистра), сохраняя порядок
         seen = set()
         unique_queries = []
+        skipped_exact_duplicates = 0
         for query in queries:
-            query_lower = query.lower()
-            if query_lower not in seen:
-                seen.add(query_lower)
+            if query not in seen:
+                seen.add(query)
                 unique_queries.append(query)
+            else:
+                skipped_exact_duplicates += 1
         
         # Ограничиваем количество если требуется
         if max_queries and len(unique_queries) > max_queries:
             unique_queries = unique_queries[:max_queries]
         
-        logger.info(f'Сгенерировано {len(unique_queries)} поисковых запросов')
+        logger.info(
+            f'Сгенерировано {len(unique_queries)} уникальных поисковых запросов '
+            f'(технологий: {len(self.technologies)}, всего алиасов: {total_aliases_count}, '
+            f'до дедупликации: {total_before_dedup}, '
+            f'пропущено алиасов точно совпадающих с названием: {skipped_aliases_exact_duplicate}, '
+            f'пропущено точных дубликатов: {skipped_exact_duplicates})'
+        )
         
         return unique_queries
     
@@ -169,7 +186,9 @@ class TechnologySearchGenerator:
         result = {}
         
         # Получаем все категории
-        categories = [choice[0] for choice in TechnologyCategory.choices]
+        categories: List[str] = [
+            str(choice[0]) for choice in TechnologyCategory.choices if choice[0]
+        ]
         
         for category in categories:
             # Загружаем технологии категории

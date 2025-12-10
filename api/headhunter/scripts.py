@@ -2,6 +2,7 @@ import re
 import time
 import logging
 import requests
+import random
 from datetime import datetime
 from dataclasses import dataclass, field
 from typing import Optional, Dict, Any, List
@@ -10,6 +11,223 @@ from .models import Vacancy
 
 
 logger = logging.getLogger('modules.vacancies_parser.headhunter')
+
+
+class ProxyRotator:
+    """Ротатор прокси-серверов для обхода блокировок"""
+
+    # Базовый набор бесплатных прокси (резервный)
+    DEFAULT_PROXIES = [
+        {'http': 'http://185.82.99.181:9091', 'https': 'https://185.82.99.181:9091'},
+        {'http': 'http://109.167.134.253:5678', 'https': 'https://109.167.134.253:5678'},
+        {'http': 'http://195.201.108.163:1080', 'https': 'https://195.201.108.163:1080'},
+    ]
+
+    def __init__(self, custom_proxies: Optional[List[Dict[str, str]]] = None):
+        self.proxies = custom_proxies or self.DEFAULT_PROXIES.copy()
+        self.current_index = 0
+        self.last_rotation = time.time()
+        self.failed_proxies = set()  # Прокси с ошибками
+
+    @classmethod
+    def from_json_file(cls, json_file_path: str) -> 'ProxyRotator':
+        """Создать ProxyRotator из JSON файла с прокси"""
+        import json
+        try:
+            with open(json_file_path, 'r', encoding='utf-8') as f:
+                proxy_data = json.load(f)
+
+            proxies = []
+            for item in proxy_data:
+                proxy_url = item.get('proxy', '')
+                protocol = item.get('protocol', 'http')
+                https = item.get('https', False)
+
+                if not proxy_url:
+                    continue
+
+                proxy_dict: Dict[str, str] = {}
+                if protocol in ['http', 'https']:
+                    if protocol == 'http' or https:
+                        proxy_dict['http'] = proxy_url
+                    if https or protocol == 'https':
+                        # Преобразуем http в https если нужно
+                        if proxy_url.startswith('http://'):
+                            proxy_dict['https'] = proxy_url.replace('http://', 'https://', 1)
+                        else:
+                            proxy_dict['https'] = proxy_url
+                elif protocol in ['socks4', 'socks5']:
+                    # Для SOCKS прокси используем тот же URL для http и https
+                    proxy_dict = {
+                        'http': proxy_url,
+                        'https': proxy_url
+                    }
+
+                if proxy_dict:
+                    proxies.append(proxy_dict)
+
+            logger.info(f'Загружено {len(proxies)} прокси из файла {json_file_path}')
+            return cls(custom_proxies=proxies)
+
+        except Exception as e:
+            logger.error(f'Ошибка загрузки прокси из файла {json_file_path}: {e}')
+            return cls()  # Возвращаем с дефолтными прокси
+
+    def get_random_proxy(self) -> Optional[Dict[str, str]]:
+        """Получить случайный рабочий прокси"""
+        available_proxies = [p for i, p in enumerate(self.proxies) if i not in self.failed_proxies]
+        if not available_proxies:
+            return None
+        return random.choice(available_proxies)
+
+    def get_next_proxy(self) -> Optional[Dict[str, str]]:
+        """Получить следующий прокси по кругу"""
+        if not self.proxies:
+            return None
+
+        # Пропускаем нерабочие прокси
+        attempts = 0
+        while attempts < len(self.proxies):
+            proxy = self.proxies[self.current_index]
+            if self.current_index not in self.failed_proxies:
+                self.current_index = (self.current_index + 1) % len(self.proxies)
+                return proxy
+
+            self.current_index = (self.current_index + 1) % len(self.proxies)
+            attempts += 1
+
+        return None
+
+    def mark_proxy_failed(self, proxy: Dict[str, str]):
+        """Отметить прокси как нерабочий"""
+        try:
+            proxy_url = proxy.get('http', proxy.get('https', ''))
+            for i, p in enumerate(self.proxies):
+                if p.get('http') == proxy_url or p.get('https') == proxy_url:
+                    self.failed_proxies.add(i)
+                    logger.warning(f"Прокси {proxy_url} отмечен как нерабочий")
+                    break
+        except Exception as e:
+            logger.debug(f"Ошибка при отметке прокси как нерабочего: {e}")
+
+    def should_rotate(self, requests_since_rotation: int, time_since_rotation: float) -> bool:
+        """Определить, нужно ли ротировать прокси"""
+        # Ротировать каждые 20-50 запросов или каждые 2-8 минут
+        return (requests_since_rotation >= random.randint(20, 50) or
+                time_since_rotation >= random.randint(120, 480))
+
+    def test_proxy(self, proxy: Dict[str, str], timeout: float = 5.0) -> bool:
+        """Протестировать работоспособность прокси"""
+        try:
+            test_url = "http://httpbin.org/ip"
+            response = requests.get(test_url, proxies=proxy, timeout=timeout)
+            return response.status_code == 200
+        except Exception:
+            return False
+
+    def get_working_proxies(self) -> List[Dict[str, str]]:
+        """Получить список рабочих прокси"""
+        working_proxies = []
+        for proxy in self.proxies:
+            if self.test_proxy(proxy, timeout=2.0):
+                working_proxies.append(proxy)
+        return working_proxies
+
+    def add_proxy(self, proxy: Dict[str, str]):
+        """Добавить новый прокси"""
+        self.proxies.append(proxy)
+
+    def clear_failed_proxies(self):
+        """Очистить список нерабочих прокси"""
+        self.failed_proxies.clear()
+
+
+class UserAgentRotator:
+    """Ротатор User-Agent для обхода блокировок"""
+
+    # Различные браузеры и устройства для имитации реальных пользователей
+    USER_AGENTS = [
+        # Chrome Desktop (разные версии)
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36',
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/118.0.0.0 Safari/537.36',
+        'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36',
+
+        # Firefox Desktop
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:120.0) Gecko/20100101 Firefox/120.0',
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:119.0) Gecko/20100101 Firefox/119.0',
+        'Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:120.0) Gecko/20100101 Firefox/120.0',
+
+        # Safari Desktop
+        'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.1 Safari/605.1.15',
+
+        # Edge
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 Edg/120.0.0.0',
+
+        # Chrome Mobile
+        'Mozilla/5.0 (Linux; Android 10; SM-G973F) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36',
+        'Mozilla/5.0 (iPhone; CPU iPhone OS 17_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) CriOS/120.0.0.0 Mobile/15E148 Safari/604.1',
+
+        # Opera
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 OPR/106.0.0.0',
+
+        # Yandex Browser
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 YaBrowser/24.1.0.0 Safari/537.36',
+    ]
+
+    def __init__(self):
+        self.current_index = 0
+        self.last_rotation = time.time()
+
+    def get_random_user_agent(self) -> str:
+        """Получить случайный User-Agent"""
+        return random.choice(self.USER_AGENTS)
+
+    def get_next_user_agent(self) -> str:
+        """Получить следующий User-Agent по кругу"""
+        ua = self.USER_AGENTS[self.current_index]
+        self.current_index = (self.current_index + 1) % len(self.USER_AGENTS)
+        return ua
+
+    def should_rotate(self, requests_since_rotation: int, time_since_rotation: float) -> bool:
+        """Определить, нужно ли ротировать User-Agent"""
+        # Ротировать каждые 50-100 запросов или каждые 5-15 минут
+        return (requests_since_rotation >= random.randint(50, 100) or
+                time_since_rotation >= random.randint(300, 900))
+
+
+class RequestJitter:
+    """Генератор jitter для имитации человеческого поведения"""
+
+    def __init__(self, base_delay: float = 1.0, jitter_factor: float = 0.3):
+        self.base_delay = base_delay
+        self.jitter_factor = jitter_factor
+
+    def get_delay(self) -> float:
+        """Получить задержку с jitter"""
+        # Добавляем случайное отклонение ±30% от базовой задержки
+        jitter = random.uniform(-self.jitter_factor, self.jitter_factor)
+        delay = self.base_delay * (1 + jitter)
+        # Минимум 0.1 секунды, максимум не больше base_delay * 2
+        return max(0.1, min(delay, self.base_delay * 2))
+
+    def get_human_like_delay(self, min_delay: float = 0.5, max_delay: float = 3.0) -> float:
+        """Получить задержку, имитирующую человеческое поведение"""
+        # Используем нормальное распределение для более реалистичных задержек
+        mean = (min_delay + max_delay) / 2
+        std_dev = (max_delay - min_delay) / 6  # 99.7% значений в пределах min-max
+
+        delay = random.gauss(mean, std_dev)
+        return max(min_delay, min(delay, max_delay))
+
+    def get_page_turn_delay(self) -> float:
+        """Задержка при перелистывании страниц (дольше, как будто читают)"""
+        return random.uniform(2.0, 5.0)
+
+    def get_detail_request_delay(self) -> float:
+        """Задержка при запросе деталей вакансии"""
+        return random.uniform(0.5, 2.0)
 
 
 @dataclass
@@ -78,44 +296,154 @@ class ParsingMetrics:
 
 
 class HeadHunterParser:
-    """Парсер для работы с API HeadHunter"""
-    
+    """Парсер для работы с API HeadHunter с ротацией User-Agent и jitter"""
+
     # Константы для rate limiting
     MAX_RETRIES = 3
     BASE_DELAY = 1.0
     MAX_DELAY = 60.0
-    
-    def __init__(self, metrics: Optional[ParsingMetrics] = None):
+
+    def __init__(self, metrics: Optional[ParsingMetrics] = None, use_jitter: bool = True,
+                 rotate_user_agent: bool = True, use_proxy: bool = False,
+                 custom_proxies: Optional[List[Dict[str, str]]] = None):
         self.base_url = "https://api.hh.ru"
-        self.headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
-        }
         self.metrics = metrics or ParsingMetrics()
+        self.use_jitter = use_jitter
+        self.rotate_user_agent = rotate_user_agent
+        self.use_proxy = use_proxy
+
+        # Инициализация компонентов
+        self.ua_rotator = UserAgentRotator() if rotate_user_agent else None
+        self.jitter = RequestJitter(base_delay=self.BASE_DELAY) if use_jitter else None
+        self.proxy_rotator = ProxyRotator(custom_proxies) if use_proxy else None
+
+        # Счетчики для ротации
+        self.requests_since_ua_rotation = 0
+        self.requests_since_proxy_rotation = 0
+        self.session_start_time = time.time()
+
+        # Начальный User-Agent
+        self._update_headers()
+
+    def _update_headers(self):
+        """Обновить заголовки с новым User-Agent"""
+        user_agent = (self.ua_rotator.get_random_user_agent() if self.ua_rotator
+                     else 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36')
+
+        self.headers = {
+            'User-Agent': user_agent,
+            'Accept': 'application/json, text/plain, */*',
+            'Accept-Language': 'ru-RU,ru;q=0.9,en-US;q=0.8,en;q=0.7',
+            'Accept-Encoding': 'gzip, deflate, br',
+            'DNT': '1',
+            'Connection': 'keep-alive',
+            'Upgrade-Insecure-Requests': '1',
+        }
+
+    def _should_rotate_user_agent(self) -> bool:
+        """Определить, нужно ли ротировать User-Agent"""
+        if not self.ua_rotator:
+            return False
+
+        time_since_rotation = time.time() - self.ua_rotator.last_rotation
+        return self.ua_rotator.should_rotate(self.requests_since_ua_rotation, time_since_rotation)
+
+    def _should_rotate_proxy(self) -> bool:
+        """Определить, нужно ли ротировать прокси"""
+        if not self.proxy_rotator:
+            return False
+
+        time_since_rotation = time.time() - self.proxy_rotator.last_rotation
+        return self.proxy_rotator.should_rotate(self.requests_since_proxy_rotation, time_since_rotation)
+
+    def _rotate_user_agent(self):
+        """Ротировать User-Agent"""
+        if self.ua_rotator:
+            old_ua = self.headers.get('User-Agent', '').split(' ')[0]
+            self._update_headers()
+            new_ua = self.headers.get('User-Agent', '').split(' ')[0]
+            logger.debug(f'Ротирован User-Agent: {old_ua} -> {new_ua}')
+            self.ua_rotator.last_rotation = time.time()
+            self.requests_since_ua_rotation = 0
+
+    def _rotate_proxy(self):
+        """Ротировать прокси"""
+        if self.proxy_rotator:
+            old_proxy = getattr(self, '_current_proxy', None)
+            self._current_proxy = self.proxy_rotator.get_random_proxy()
+            logger.debug(f'Ротирован прокси: {old_proxy} -> {self._current_proxy}')
+            self.proxy_rotator.last_rotation = time.time()
+            self.requests_since_proxy_rotation = 0
+
+    def _get_current_proxy(self) -> Optional[Dict[str, str]]:
+        """Получить текущий прокси"""
+        if not self.use_proxy or not self.proxy_rotator:
+            return None
+
+        if not hasattr(self, '_current_proxy') or self._current_proxy is None:
+            self._current_proxy = self.proxy_rotator.get_random_proxy()
+
+        return self._current_proxy
+
+    def _get_delay(self, is_page_turn: bool = False, is_detail_request: bool = False) -> float:
+        """Получить задержку с учетом jitter"""
+        if not self.jitter:
+            return self.BASE_DELAY
+
+        if is_page_turn:
+            return self.jitter.get_page_turn_delay()
+        elif is_detail_request:
+            return self.jitter.get_detail_request_delay()
+        else:
+            return self.jitter.get_delay()
     
     def _make_request(
-        self, 
-        url: str, 
-        params: Optional[Dict] = None, 
-        max_retries: Optional[int] = None
+        self,
+        url: str,
+        params: Optional[Dict] = None,
+        max_retries: Optional[int] = None,
+        is_page_turn: bool = False,
+        is_detail_request: bool = False
     ) -> Optional[Dict]:
         """
-        Выполнить HTTP-запрос с обработкой rate limiting и exponential backoff.
-        
+        Выполнить HTTP-запрос с обработкой rate limiting, ротацией User-Agent и jitter.
+
         Args:
             url: URL для запроса
             params: Параметры запроса
             max_retries: Максимальное количество попыток
-            
+            is_page_turn: Запрос на следующую страницу
+            is_detail_request: Запрос деталей вакансии
+
         Returns:
             JSON-ответ или None при ошибке
         """
         max_retries = max_retries or self.MAX_RETRIES
         last_error = None
-        
+
+        # Ротируем User-Agent и прокси если нужно
+        if self._should_rotate_user_agent():
+            self._rotate_user_agent()
+
+        if self._should_rotate_proxy():
+            self._rotate_proxy()
+
         for attempt in range(max_retries):
             try:
-                response = requests.get(url, params=params, headers=self.headers, timeout=30)
-                
+                # Добавляем jitter задержку перед запросом (кроме первого)
+                if attempt > 0 or self.requests_since_ua_rotation > 0:
+                    delay = self._get_delay(is_page_turn, is_detail_request)
+                    time.sleep(delay)
+                    logger.debug(f"Jitter delay: {delay:.2f}s")
+
+                # Получаем текущий прокси
+                current_proxy = self._get_current_proxy()
+                self.requests_since_ua_rotation += 1
+                self.requests_since_proxy_rotation += 1
+
+                response = requests.get(url, params=params, headers=self.headers,
+                                      proxies=current_proxy, timeout=30)
+
                 # Обработка rate limiting (429 Too Many Requests)
                 if response.status_code == 429:
                     self.metrics.record_rate_limit()
@@ -126,6 +454,10 @@ class HeadHunterParser:
                         attempt + 1, max_retries, retry_after
                     )
                     time.sleep(retry_after)
+                    # При rate limit ротируем User-Agent и прокси
+                    self._rotate_user_agent()
+                    if self.use_proxy:
+                        self._rotate_proxy()
                     continue
                 
                 # Обработка 403 Forbidden (возможно бан)
@@ -136,6 +468,11 @@ class HeadHunterParser:
                     # Увеличенная пауза при 403
                     delay = min(self.BASE_DELAY * (2 ** attempt) * 5, self.MAX_DELAY)
                     time.sleep(delay)
+
+                    # Ротируем User-Agent и прокси при 403
+                    self._rotate_user_agent()
+                    if self.use_proxy:
+                        self._rotate_proxy()
                     continue
                 
                 # Успешный запрос
@@ -154,7 +491,12 @@ class HeadHunterParser:
                 self.metrics.record_request(success=False)
                 self.metrics.record_error(f"Connection error для {url}")
                 logger.warning("Ошибка соединения %s (попытка %d/%d)", url, attempt + 1, max_retries)
-                
+
+                # Ротируем прокси при ошибке соединения
+                if self.use_proxy and self.proxy_rotator and current_proxy:
+                    self.proxy_rotator.mark_proxy_failed(current_proxy)
+                    self._rotate_proxy()
+
             except requests.HTTPError as e:
                 last_error = e
                 self.metrics.record_request(success=False)
@@ -177,12 +519,12 @@ class HeadHunterParser:
         logger.error("Не удалось выполнить запрос %s после %d попыток: %s", url, max_retries, last_error)
         return None
     
-    def search_vacancies(self, text=None, area=None, experience=None, employment=None, 
+    def search_vacancies(self, text=None, area=None, experience=None, employment=None,
                         schedule=None, professional_role=None, per_page=100, page=0,
-                        only_with_salary=False):
+                        only_with_salary=False, date_from=None, date_to=None):
         """
         Поиск вакансий по параметрам
-        
+
         Args:
             text (str): Текст для поиска (может содержать несколько слов)
             area (int): ID региона (1 - Москва, 2 - СПб, 113 - Россия)
@@ -193,6 +535,8 @@ class HeadHunterParser:
             per_page (int): Количество вакансий на странице (максимум 100)
             page (int): Номер страницы
             only_with_salary (bool): Только вакансии с указанной зарплатой
+            date_from (str): Дата публикации от (формат YYYY-MM-DD)
+            date_to (str): Дата публикации до (формат YYYY-MM-DD)
         """
         params = {
             'per_page': per_page,
@@ -216,12 +560,18 @@ class HeadHunterParser:
             params['schedule'] = schedule
         if professional_role:
             params['professional_role'] = professional_role
-        
-        return self._make_request(f"{self.base_url}/vacancies", params=params)
+        if date_from:
+            params['date_from'] = date_from
+        if date_to:
+            params['date_to'] = date_to
+
+        # Добавляем jitter для страниц после первой (имитация чтения)
+        is_page_turn = page > 0
+        return self._make_request(f"{self.base_url}/vacancies", params=params, is_page_turn=is_page_turn)
     
     def get_vacancy_details(self, vacancy_id):
         """Получение детальной информации о вакансии"""
-        return self._make_request(f"{self.base_url}/vacancies/{vacancy_id}")
+        return self._make_request(f"{self.base_url}/vacancies/{vacancy_id}", is_detail_request=True)
     
     def check_vacancy_exists(self, vacancy_id) -> Optional[Dict]:
         """
@@ -527,17 +877,20 @@ class HeadHunterParser:
         return self._make_request(f"{self.base_url}/vacancies", params=params)
 
 
-def parse_vacancies_by_text(text_list, area=113, pages=2, delay=1.0, get_details=True):
+def parse_vacancies_by_text(text_list, area=113, pages=2, delay=1.0, get_details=True,
+                           date_from=None, date_to=None):
     """
     Парсинг вакансий по списку текстовых запросов
-    
+
     Args:
         text_list (list): Список текстов для поиска (например: ["Python разработчик", "Java программист"])
         area (int): ID региона (1 - Москва, 2 - СПб, 113 - Россия)
         pages (int): Количество страниц для каждого запроса
         delay (float): Задержка между запросами в секундах
         get_details (bool): Получать ли детальную информацию о вакансиях
-    
+        date_from (str): Дата публикации от (формат YYYY-MM-DD)
+        date_to (str): Дата публикации до (формат YYYY-MM-DD)
+
     Returns:
         dict: Статистика парсинга
     """
@@ -575,7 +928,9 @@ def parse_vacancies_by_text(text_list, area=113, pages=2, delay=1.0, get_details
                 text=text,
                 area=area,
                 per_page=100,
-                page=page
+                page=page,
+                date_from=date_from,
+                date_to=date_to
             )
             
             if not search_result:
