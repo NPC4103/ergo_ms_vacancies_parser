@@ -9,7 +9,7 @@
       "enabled": true,
       "category": "LANG",
       "interval": "weekdays 06:15, 12:15, 18:15",
-      "pages": 2,
+      "pages": 200,
       "max_queries": 20,
       "priority": 8,
       "description": "Языки программирования 3 раза в рабочие дни (утро/обед/вечер)"
@@ -18,7 +18,7 @@
       "enabled": true,
       "category": "LANG",
       "interval": "weekend 10:15, 18:15",
-      "pages": 2,
+      "pages": 200,
       "max_queries": 20,
       "priority": 6,
       "description": "Языки программирования 2 раза в выходные"
@@ -27,7 +27,7 @@
       "enabled": true,
       "category": "FRAMEWORK",
       "interval": "weekdays 07:30, 13:30, 19:30",
-      "pages": 2,
+      "pages": 200,
       "max_queries": 25,
       "priority": 7,
       "description": "Фреймворки 3 раза в рабочие дни со сдвигом от языков"
@@ -36,7 +36,7 @@
       "enabled": true,
       "category": "FRAMEWORK",
       "interval": "weekend 11:30, 19:30",
-      "pages": 2,
+      "pages": 200,
       "max_queries": 25,
       "priority": 5,
       "description": "Фреймворки 2 раза в выходные"
@@ -45,7 +45,7 @@
       "enabled": true,
       "category": "DB",
       "interval": "daily 08:45, 20:45",
-      "pages": 2,
+      "pages": 200,
       "max_queries": 15,
       "priority": 5,
       "description": "Базы данных 2 раза в день (утро и вечер)"
@@ -54,7 +54,7 @@
       "enabled": true,
       "category": "TOOL",
       "interval": "daily 14:00",
-      "pages": 2,
+      "pages": 200,
       "max_queries": 15,
       "priority": 4,
       "description": "Инструменты 1 раз в день в обед"
@@ -63,7 +63,7 @@
       "enabled": true,
       "category": "PLATFORM",
       "interval": "daily 23:30",
-      "pages": 2,
+      "pages": 200,
       "max_queries": 15,
       "use_aliases": true,
       "priority": 3,
@@ -73,7 +73,7 @@
       "enabled": true,
       "interval": "weekdays */3 hours (09:00-21:00)",
       "top_n": 20,
-      "pages": 1,
+      "pages": 200,
       "get_details": false,
       "priority": 9,
       "description": "Быстрый пульс топ-20 технологий каждые 3 часа в рабочее время"
@@ -83,7 +83,7 @@
       "interval": "daily 03:00",
       "top_n": 40,
       "categories": ["LANG", "FRAMEWORK"],
-      "pages": 3,
+      "pages": 200,
       "get_details": true,
       "priority": 6,
       "description": "Глубокое сканирование топ-40 ночью с полными деталями"
@@ -93,7 +93,7 @@
       "interval": "Sunday 04:00",
       "top_n": 60,
       "use_aliases": true,
-      "pages": 3,
+      "pages": 200,
       "max_queries": 120,
       "priority": 7,
       "description": "Еженедельный полный парсинг всех технологий с алиасами"

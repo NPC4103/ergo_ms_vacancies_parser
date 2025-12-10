@@ -1772,9 +1772,9 @@ def parse_vacancies_by_professional_roles(
                     role_updated_vacancies = 0
                     role_errors = 0
 
-                    # Оптимизированные параметры для максимального покрытия (20 страниц по 100 вакансий = 2000 лимит)
-                    max_pages_per_role = 20   # 20 страниц для полного покрытия
-                    per_page_limit = 100      # 100 вакансий на страницу (лимит API HH)
+                    # Оптимизированные параметры для максимального покрытия (200 страниц по 10 вакансий = 2000 лимит)
+                    max_pages_per_role = 200   # до 200 страниц
+                    per_page_limit = 10        # 10 вакансий на страницу (чтобы не превысить лимит 2000)
                     actual_pages = min(pages if pages > 0 else max_pages_per_role, max_pages_per_role)
 
                     logger.info(f'Начинаем парсинг роли {role.name} (ID: {role.id}): {actual_pages} страниц по {per_page_limit} вакансий')
@@ -1828,51 +1828,80 @@ def parse_vacancies_by_professional_roles(
                             progress_percent = ((page + 1) / actual_pages) * 100
                             logger.info(f'Роль {role.name}: страница {page + 1}/{actual_pages} ({progress_percent:.1f}%) - найдено {page_vacancy_count} вакансий (всего: {role_vacancies})')
 
-                            # Обрабатываем каждую вакансию на странице
+                            # Обрабатываем каждую вакансию на странице (пакетно для ускорения деталей)
                             page_new = 0
                             page_updated = 0
                             page_errors = 0
 
+                            vacancy_ids: List[str] = []
+                            new_vacancies_buffer: Dict[str, Vacancy] = {}
+                            existing_vacancies_buffer: Dict[str, Vacancy] = {}
+                            vacancy_snippets: Dict[str, Dict[str, Any]] = {}
+
                             for vacancy_data in page_vacancies:
+                                vacancy_id = str(vacancy_data.get('id')) if vacancy_data.get('id') else ''
+                                if not vacancy_id:
+                                    logger.warning(f'Пропускаем вакансию без ID в роли {role.name}')
+                                    page_errors += 1
+                                    continue
+
+                                vacancy_ids.append(vacancy_id)
+                                vacancy_snippets[vacancy_id] = vacancy_data
+
+                                existing_vacancy = Vacancy.objects.filter(hh_id=vacancy_id).first()
+                                if existing_vacancy:
+                                    existing_vacancies_buffer[vacancy_id] = existing_vacancy
+                                else:
+                                    vacancy_obj = _create_vacancy_from_api_data(vacancy_data, role.id, role.name)
+                                    new_vacancies_buffer[vacancy_id] = vacancy_obj
+
+                            # Загружаем детали пачками, чтобы минимизировать суммарную задержку
+                            details_map: Dict[str, Any] = {}
+                            if get_details and vacancy_ids:
+                                detail_chunk_size = 25  # как в технологиях: небольшие пачки, но без больших пауз
+                                for i in range(0, len(vacancy_ids), detail_chunk_size):
+                                    chunk_ids = vacancy_ids[i:i + detail_chunk_size]
+                                    try:
+                                        chunk_details = asyncio.run(_fetch_vacancy_details_batch_async(
+                                            parser, chunk_ids, '[Roles] '
+                                        ))
+                                        if chunk_details:
+                                            details_map.update(chunk_details)
+                                    except Exception as e:  # noqa: BLE001
+                                        logger.warning(f'Ошибка при пакетной загрузке деталей ролей: {e}')
+                                    # Минимальная пауза между пачками, только если задержки разрешены
+                                    if not no_delays and delay > 0 and i + detail_chunk_size < len(vacancy_ids):
+                                        time.sleep(min(delay * 0.2, 0.5))
+
+                            # Применяем детали и сохраняем
+                            for vacancy_id in vacancy_ids:
                                 try:
-                                    vacancy_id = vacancy_data.get('id')
-                                    if not vacancy_id:
-                                        logger.warning(f'Пропускаем вакансию без ID в роли {role.name}')
-                                        page_errors += 1
-                                        continue
-
-                                    # Проверяем, существует ли уже такая вакансия
-                                    existing_vacancy = Vacancy.objects.filter(hh_id=str(vacancy_id)).first()
-
-                                    if existing_vacancy:
-                                        # Обновляем существующую вакансию
+                                    if vacancy_id in existing_vacancies_buffer:
+                                        existing_vacancy = existing_vacancies_buffer[vacancy_id]
+                                        details = details_map.get(vacancy_id)
                                         updated = False
-                                        if get_details:
-                                            details = parser.get_vacancy_details(str(vacancy_id))
-                                            if details:
-                                                updated = _update_vacancy_from_api_data(existing_vacancy, details)
+                                        if details:
+                                            details = _merge_snippet_into_details(details, vacancy_snippets.get(vacancy_id, {}))
+                                            updated = _update_vacancy_from_api_data(existing_vacancy, details)
                                         existing_vacancy.updated_at = timezone.now()
                                         existing_vacancy.save()
-
                                         if updated:
                                             page_updated += 1
                                             role_updated_vacancies += 1
                                     else:
-                                        # Создаем новую вакансию
-                                        vacancy_obj = _create_vacancy_from_api_data(vacancy_data, role.id, role.name)
-
-                                        if get_details:
-                                            # Получаем детальную информацию
-                                            details = parser.get_vacancy_details(str(vacancy_id))
-                                            if details:
-                                                _update_vacancy_from_api_data(vacancy_obj, details)
-
+                                        vacancy_obj = new_vacancies_buffer.get(vacancy_id)
+                                        if not vacancy_obj:
+                                            continue
+                                        details = details_map.get(vacancy_id)
+                                        if details:
+                                            details = _merge_snippet_into_details(details, vacancy_snippets.get(vacancy_id, {}))
+                                            _update_vacancy_from_api_data(vacancy_obj, details)
                                         vacancy_obj.save()
                                         page_new += 1
                                         role_new_vacancies += 1
                                         total_new_vacancies += 1
 
-                                except Exception as e:
+                                except Exception as e:  # noqa: BLE001
                                     logger.error(f'Ошибка обработки вакансии {vacancy_id} для роли {role.name}: {e}')
                                     page_errors += 1
                                     role_errors += 1
@@ -2704,3 +2733,22 @@ def _update_vacancy_from_api_data(vacancy: Vacancy, details: Dict[str, Any]) -> 
         has_changes = True
 
     return has_changes
+
+
+def _merge_snippet_into_details(details: Dict[str, Any], search_vacancy: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Добавляет snippet из поисковой выдачи в детальные данные, если его нет.
+    Это помогает не терять укороченный текст требований/обязанностей.
+    """
+    if 'snippet' not in details and search_vacancy.get('snippet'):
+        details = dict(details)
+        details['snippet'] = search_vacancy.get('snippet')
+
+    # Если в деталях нет responsibilities/requirements, но есть в snippet — проставляем
+    snippet = search_vacancy.get('snippet') or {}
+    if 'responsibilities' not in details and snippet.get('responsibility'):
+        details['responsibilities'] = snippet.get('responsibility')
+    if 'requirements' not in details and snippet.get('requirement'):
+        details['requirements'] = snippet.get('requirement')
+
+    return details

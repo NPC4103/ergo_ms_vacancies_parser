@@ -77,6 +77,11 @@ class Command(BaseCommand):
             action='store_true',
             help='Дождаться завершения задачи Celery и вывести результат'
         )
+        parser.add_argument(
+            '--sync',
+            action='store_true',
+            help='Выполнить синхронно без Celery (apply)'
+        )
 
     def handle(self, *args, **options):
         self.stdout.write('=' * 70)
@@ -93,6 +98,7 @@ class Command(BaseCommand):
         get_details = not options.get('no_details')
         max_queries = options.get('max_queries')
         wait = options.get('wait')
+        sync_mode = options.get('sync')
         
         # Вывод параметров
         self.stdout.write('Параметры парсинга:')
@@ -114,11 +120,19 @@ class Command(BaseCommand):
         self.stdout.write('\n' + '=' * 70 + '\n')
         
         try:
-            # Запуск задачи
+            # Запуск задачи (Celery или синхронно)
+            def _run_task_inline(task_func, kwargs):
+                self.stdout.write('Синхронный запуск (без Celery worker)...')
+                res = task_func.apply(kwargs=kwargs)
+                if res.successful():
+                    result = res.get()
+                    self.stdout.write('Задача завершена!')
+                    self._print_result(result)
+                else:
+                    self.stdout.write(f'Ошибка при выполнении: {res.result}')
+
             if category:
-                # Парсинг по конкретной категории
-                self.stdout.write(f'Запуск парсинга по категории: {category}')
-                task = parse_vacancies_by_category.delay(
+                task_kwargs = dict(
                     category=category,
                     use_aliases=use_aliases,
                     area=area,
@@ -127,10 +141,13 @@ class Command(BaseCommand):
                     get_details=get_details,
                     max_queries=max_queries or 50
                 )
+                if sync_mode:
+                    _run_task_inline(parse_vacancies_by_category, task_kwargs)
+                    return
+                self.stdout.write(f'Запуск парсинга по категории: {category}')
+                task = parse_vacancies_by_category.delay(**task_kwargs)  # type: ignore[call-arg]
             else:
-                # Парсинг по топовым технологиям или списку категорий
-                self.stdout.write('Запуск парсинга по технологиям')
-                task = parse_vacancies_by_technologies.delay(
+                task_kwargs = dict(
                     categories=categories,
                     top_n=top_n,
                     use_aliases=use_aliases,
@@ -140,6 +157,11 @@ class Command(BaseCommand):
                     get_details=get_details,
                     max_queries=max_queries
                 )
+                if sync_mode:
+                    _run_task_inline(parse_vacancies_by_technologies, task_kwargs)
+                    return
+                self.stdout.write('Запуск парсинга по технологиям')
+                task = parse_vacancies_by_technologies.delay(**task_kwargs)  # type: ignore[call-arg]
             
             self.stdout.write(f'Задача Celery отправлена! Task ID: {task.id}')
 

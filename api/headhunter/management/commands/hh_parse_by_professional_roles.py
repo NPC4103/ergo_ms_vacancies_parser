@@ -27,6 +27,15 @@ PROFILES: Dict[str, Dict[str, Any]] = {
         'parallel_workers': 1,
         'no_delays': False,
     },
+    'full': {
+        'delay': 0.8,             # минимально безопасная задержка для деталей
+        'parallel_workers': 1,    # без параллельности, чтобы не ловить капчу на деталях
+        'no_delays': False,
+        'get_details': True,
+        'pages': 200,
+        'max_concurrent_roles': 3,
+        'batch_size': 15,
+    },
     'fast': {
         'delay': 0.5,
         'parallel_workers': 2,
@@ -36,6 +45,15 @@ PROFILES: Dict[str, Dict[str, Any]] = {
         'delay': 0.7,
         'parallel_workers': 3,
         'no_delays': False,
+    },
+    'test': {
+        'delay': 0.5,
+        'parallel_workers': 1,
+        'no_delays': True,
+        'pages': 1,
+        'get_details': False,
+        'max_concurrent_roles': 2,
+        'batch_size': 5,
     },
 }
 
@@ -67,6 +85,7 @@ class ParsingConfig:
     max_concurrent_roles: int = 5
     batch_size: int = 25
     parallel_workers: int = 1
+    sync: bool = False
 
     # Флаги поведения
     force_refresh_roles: bool = False
@@ -145,7 +164,7 @@ class Command(BaseCommand):
             '--pages',
             type=int,
             default=None,
-            help='Количество страниц для каждой роли (по умолчанию: 20, по 100 вакансий на страницу)'
+            help='Количество страниц для каждой роли (по умолчанию: 20, по 10 вакансий на страницу, максимум 200)'
         )
 
         parser.add_argument(
@@ -223,6 +242,11 @@ class Command(BaseCommand):
             '--dry-run',
             action='store_true',
             help='Показать конфигурацию и не запускать задачу'
+        )
+        parser.add_argument(
+            '--sync',
+            action='store_true',
+            help='Синхронный запуск без Celery (apply)'
         )
 
         # Дополнительные параметры фильтрации из API HH
@@ -334,14 +358,23 @@ class Command(BaseCommand):
                 return profile_overrides[name]
             return defaults.get(name, hardcoded)
 
-        pages_value = max(pick('pages', 20), 20)  # всегда минимум 20 страниц
+        ctx_profile = options.get('profile') or ''
+        min_pages = 1 if ctx_profile == 'test' else 20
+        pages_value = max(pick('pages', 20), min_pages)
+
+        if options.get('no_details') is not None:
+            get_details_val = not options['no_details']
+        elif 'get_details' in profile_overrides:
+            get_details_val = profile_overrides['get_details']
+        else:
+            get_details_val = defaults.get('get_details', True)
 
         return ParsingConfig(
             # Основные параметры
             area=pick('area', 113),
             pages=pages_value,
             delay=pick('delay', 0.5),
-            get_details=not options['no_details'] if options.get('no_details') is not None else defaults.get('get_details', True),
+            get_details=get_details_val,
             max_concurrent_roles=pick('max_concurrent_roles', 5),
             batch_size=pick('batch_size', 25),
             parallel_workers=min(pick('parallel_workers', 1), 10),  # Макс 10 параллельных задач
@@ -353,6 +386,7 @@ class Command(BaseCommand):
             no_delays=pick('no_delays', False),
             wait=options['wait'],
             dry_run=options['dry_run'],
+            sync=options['sync'],
             profile=options.get('profile'),
             json_output=options['json_output'],
             quiet=options['quiet'],
@@ -480,6 +514,28 @@ class Command(BaseCommand):
 
         # Получаем параметры для задачи
         task_params = config.to_task_params()
+
+        if config.sync:
+            # В синхронном режиме отключаем распараллеливание (chord не работает с apply)
+            if task_params.get('parallel_workers', 1) > 1:
+                task_params['parallel_workers'] = 1
+                if not config.quiet:
+                    self.stdout.write('Синхронный режим: parallel_workers принудительно установлен в 1')
+
+            # Синхронный запуск без Celery worker
+            if not config.quiet:
+                self.stdout.write('Синхронный запуск (без Celery worker)...')
+            task = parse_vacancies_by_professional_roles.apply(kwargs=task_params)  # type: ignore[call-arg]
+            if task.successful():
+                result = task.get()
+                self._print_result(result, config)
+            else:
+                if config.json_output:
+                    self.stdout.write(json.dumps({'status': 'error', 'error': str(task.result)}, ensure_ascii=False))
+                else:
+                    self.stdout.write(TEXT['error_exec'].format(error=task.result))
+            return
+
         task = parse_vacancies_by_professional_roles.delay(**task_params)  # type: ignore[call-arg]
 
         if config.json_output and not config.wait:

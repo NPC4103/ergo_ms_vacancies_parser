@@ -638,17 +638,20 @@ class HeadHunterParser:
             description = vacancy_data.get('description', '')
             
             # Сначала пробуем получить из snippet (обрезанные данные)
-            requirements = self._get_snippet_field(vacancy_data.get('snippet'), 'requirement')
-            responsibilities = self._get_snippet_field(vacancy_data.get('snippet'), 'responsibility')
+            snippet = vacancy_data.get('snippet')
+            requirements = self._get_snippet_field(snippet, 'requirement')
+            responsibilities = self._get_snippet_field(snippet, 'responsibility')
             
             # Если есть полное описание, пробуем извлечь полные данные
             if description:
                 extracted = self._extract_sections_from_description(description)
-                # Используем извлечённые данные если они длиннее чем из snippet
                 if extracted['requirements'] and len(extracted['requirements']) > len(requirements or ''):
                     requirements = extracted['requirements']
                 if extracted['responsibilities'] and len(extracted['responsibilities']) > len(responsibilities or ''):
                     responsibilities = extracted['responsibilities']
+            else:
+                # Фоллбек: строим описание из snippet, чтобы не терять текст при get_details=False
+                description = self._build_description_from_snippet(snippet)
             
             # Создаем объект вакансии с полными данными
             vacancy = Vacancy(
@@ -721,6 +724,24 @@ class HeadHunterParser:
             return ''
         except Exception:
             return ''
+
+    def _build_description_from_snippet(self, snippet_data: Optional[Dict[str, Any]]) -> str:
+        """
+        Строит текст описания из snippet, если полного описания нет.
+        """
+        if not snippet_data or not isinstance(snippet_data, dict):
+            return ''
+
+        parts: List[str] = []
+        req = snippet_data.get('requirement')
+        resp = snippet_data.get('responsibility')
+
+        if req:
+            parts.append(f'Требования: {req}')
+        if resp:
+            parts.append(f'Обязанности: {resp}')
+
+        return '\n'.join(parts)
     
     def _extract_sections_from_description(self, description_html):
         """
