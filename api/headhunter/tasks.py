@@ -23,19 +23,31 @@ SKILL_MAP_APP = 'modules.competence_core.api.skill_map'
 PROFESSIONAL_ROLES_CONFIG = Path(__file__).parent / 'config' / 'professional_roles_config.json'
 
 
-def _load_target_category_id() -> Optional[str]:
+def _load_target_category_id() -> str:
     """
     Загружает ID целевой категории ролей (для IT) из конфигурации.
-    Возвращает None, если конфиг недоступен или ID не задан.
+    По умолчанию возвращает '11' (IT категория), если конфиг недоступен или ID не задан.
+    
+    Returns:
+        str: ID категории (по умолчанию '11' для IT)
     """
+    # Категория 11 - IT по умолчанию
+    DEFAULT_CATEGORY_ID = '11'
+    
     try:
-        with open(PROFESSIONAL_ROLES_CONFIG, 'r', encoding='utf-8') as config_file:
-            config_data = json.load(config_file)
-        category_id = config_data.get('target_category', {}).get('id')
-        return str(category_id) if category_id else None
+        if PROFESSIONAL_ROLES_CONFIG.exists():
+            with open(PROFESSIONAL_ROLES_CONFIG, 'r', encoding='utf-8') as config_file:
+                config_data = json.load(config_file)
+            category_id = config_data.get('target_category', {}).get('id')
+            if category_id:
+                logger.debug(f'Загружена категория {category_id} из конфига')
+                return str(category_id)
+        else:
+            logger.debug(f'Файл конфигурации {PROFESSIONAL_ROLES_CONFIG} не найден, используем категорию по умолчанию: {DEFAULT_CATEGORY_ID}')
     except Exception as exc:
-        logger.warning('Не удалось загрузить target_category.id из конфига: %s', exc)
-        return None
+        logger.warning('Не удалось загрузить target_category.id из конфига: %s, используем категорию по умолчанию: %s', exc, DEFAULT_CATEGORY_ID)
+    
+    return DEFAULT_CATEGORY_ID
 
 
 @shared_task(
@@ -1710,8 +1722,28 @@ def parse_vacancies_by_professional_roles(
                 get_details=get_details,
                 max_concurrent_roles=max_concurrent_roles,
                 batch_size=batch_size,
-                no_delays=no_delays
+                no_delays=no_delays,
+                experience=experience,
+                employment=employment,
+                schedule=schedule,
+                only_with_salary=only_with_salary,
+                period=period,
+                date_from=date_from,
+                date_to=date_to,
+                salary_from=salary_from,
+                salary_to=salary_to
             )
+            
+            # Логируем распределение ролей для отладки
+            if chord_header:
+                roles_per_worker = len(it_roles) // parallel_workers
+                remainder = len(it_roles) % parallel_workers
+                for worker_idx in range(parallel_workers):
+                    worker_roles_count = roles_per_worker + (1 if worker_idx < remainder else 0)
+                    logger.info(
+                        f'[DISTRIBUTION] Worker {worker_idx + 1} получит {worker_roles_count} ролей '
+                        f'(из {len(it_roles)} всего)'
+                    )
 
             if not chord_header:
                 return {
@@ -1772,10 +1804,91 @@ def parse_vacancies_by_professional_roles(
                     role_updated_vacancies = 0
                     role_errors = 0
 
-                    # Оптимизированные параметры для максимального покрытия (200 страниц по 10 вакансий = 2000 лимит)
-                    max_pages_per_role = 200   # до 200 страниц
-                    per_page_limit = 10        # 10 вакансий на страницу (чтобы не превысить лимит 2000)
+                    # Оптимизированные параметры для максимального покрытия (лимит 2000 вакансий)
+                    # Если pages <= 20: используем 100 вакансий на страницу (20 × 100 = 2000)
+                    # Если pages > 20: используем 10 вакансий на страницу (200 × 10 = 2000)
+                    if pages <= 20:
+                        per_page_limit = 100  # 100 вакансий на страницу (лимит API HH)
+                        max_pages_per_role = 20  # Максимум 20 страниц
+                    else:
+                        per_page_limit = 10   # 10 вакансий на страницу
+                        max_pages_per_role = 200  # Максимум 200 страниц (200 × 10 = 2000)
+                    
                     actual_pages = min(pages if pages > 0 else max_pages_per_role, max_pages_per_role)
+
+                    # Сначала получаем общее количество вакансий и страниц для роли
+                    logger.info(f'[INFO] Получение информации о количестве вакансий для роли {role.name} (ID: {role.id})...')
+                    info_params = {
+                        'professional_role': role.id,
+                        'area': area,
+                        'per_page': 1,  # Минимум для получения метаданных
+                        'page': 0
+                    }
+                    logger.debug(f'[DEBUG] Параметры информационного запроса: {info_params}')
+                    
+                    # Добавляем дополнительные параметры фильтрации для информационного запроса
+                    if experience:
+                        info_params['experience'] = experience
+                    if employment:
+                        info_params['employment'] = employment
+                    if schedule:
+                        info_params['schedule'] = schedule
+                    if only_with_salary:
+                        info_params['only_with_salary'] = only_with_salary
+                    if period:
+                        info_params['period'] = period
+                    if date_from:
+                        info_params['date_from'] = date_from
+                    if date_to:
+                        info_params['date_to'] = date_to
+                    if salary_from or salary_to:
+                        info_params['currency'] = 'RUR'
+                        if salary_from:
+                            info_params['salary_from'] = salary_from
+                        if salary_to:
+                            info_params['salary_to'] = salary_to
+                    
+                    try:
+                        info_result = parser.search_vacancies(**info_params)
+                    except Exception as e:
+                        logger.warning(f'Роль {role.name}: ошибка при получении информации о количестве вакансий: {e}, используем запрошенное количество страниц')
+                        info_result = None
+                    
+                    if not info_result or 'found' not in info_result:
+                        logger.warning(f'Роль {role.name}: не удалось получить информацию о количестве вакансий, используем запрошенное количество страниц')
+                        total_found = 0
+                        total_pages_api = actual_pages
+                    else:
+                        total_found = info_result.get('found', 0)
+                        # ВАЖНО: API возвращает pages для per_page=1, нужно пересчитать для нашего per_page_limit
+                        pages_api_info = info_result.get('pages', 0)  # Страниц при per_page=1
+                        
+                        # Пересчитываем количество страниц для нашего per_page_limit
+                        if total_found > 0 and per_page_limit > 0:
+                            total_pages_api = (total_found + per_page_limit - 1) // per_page_limit  # Округление вверх
+                        else:
+                            total_pages_api = 0
+                        
+                        logger.debug(f'Роль {role.name}: API вернул found={total_found}, pages (при per_page=1)={pages_api_info}, пересчитано для per_page={per_page_limit}: {total_pages_api} страниц')
+                        
+                        # Рассчитываем оптимальное количество страниц на основе лимита 2000 вакансий
+                        max_vacancies_limit = 2000
+                        if total_found > 0:
+                            # Рассчитываем количество страниц для достижения лимита
+                            pages_needed_for_limit = (max_vacancies_limit + per_page_limit - 1) // per_page_limit  # Округление вверх
+                            
+                            # Берем минимум из: нужного для лимита, доступного в API, запрошенного
+                            pages_needed = min(
+                                pages_needed_for_limit,
+                                total_pages_api,
+                                actual_pages
+                            )
+                            
+                            actual_pages = pages_needed
+                            logger.info(f'Роль {role.name}: найдено {total_found} вакансий, доступно {total_pages_api} страниц (при {per_page_limit} вакансий/страницу), будем парсить {actual_pages} страниц (лимит: {max_vacancies_limit} вакансий)')
+                        else:
+                            logger.info(f'Роль {role.name}: вакансий не найдено, пропускаем')
+                            continue
 
                     logger.info(f'Начинаем парсинг роли {role.name} (ID: {role.id}): {actual_pages} страниц по {per_page_limit} вакансий')
                     total_expected = actual_pages * per_page_limit  # Ожидаемое количество вакансий
@@ -1787,7 +1900,7 @@ def parse_vacancies_by_professional_roles(
                             search_params = {
                                 'professional_role': role.id,
                                 'area': area,
-                                'per_page': per_page_limit,  # 10 вакансий на страницу
+                                'per_page': per_page_limit,
                                 'page': page
                             }
 
@@ -2019,13 +2132,12 @@ def get_professional_roles_task(self):
         logger.info('Начало выполнения задачи получения профессиональных ролей')
 
         target_category_id = _load_target_category_id()
-        if target_category_id:
-            logger.info('Фильтрация ролей по категории %s (ожидается IT)', target_category_id)
+        logger.info('Фильтрация ролей по категории %s (IT)', target_category_id)
 
         # Создаем парсер
         parser = HeadHunterParser()
 
-        # Получаем роли (ограничиваемся целевой категорией, если указана)
+        # Получаем роли (ограничиваемся целевой категорией)
         roles = parser.get_professional_roles(category_id=target_category_id)
 
         if roles is None:
@@ -2046,18 +2158,13 @@ def get_professional_roles_task(self):
 
         # Получаем статистику по категориям
         raw_data = parser._make_request(f"{parser.base_url}/professional_roles")
-        categories_count = 0
+        categories_count = 1  # По умолчанию 1 категория (IT)
         if raw_data and 'categories' in raw_data:
-            if target_category_id:
-                categories_count = 1 if any(
-                    str(category.get('id')) == target_category_id
-                    for category in raw_data['categories']
-                ) else 0
-            else:
-                categories_count = len(raw_data['categories'])
-        elif target_category_id:
-            # Если не смогли получить категории, но фильтр указан и роли есть
-            categories_count = 1
+            # Проверяем, существует ли целевая категория в списке
+            categories_count = 1 if any(
+                str(category.get('id')) == target_category_id
+                for category in raw_data['categories']
+            ) else 1  # Если категория не найдена, но роли есть, считаем что категория 1
 
         total_roles = len(roles)
 
@@ -2122,19 +2229,32 @@ def _filter_roles_for_parsing(it_roles, skip_existing_roles, incremental):
 async def _fetch_vacancy_details_batch_async(parser, vacancy_ids, worker_prefix):
     """
     Асинхронно получает детали нескольких вакансий одновременно.
+    Возвращает словарь {vacancy_id: details} и статистику ошибок.
     """
     import aiohttp
     import asyncio
 
+    errors_count = 0
+    errors_403_count = 0
+    last_error = None
+
     async def fetch_single(vacancy_id):
+        nonlocal errors_count, errors_403_count, last_error
         try:
             details = await asyncio.get_event_loop().run_in_executor(
                 None, parser.get_vacancy_details, str(vacancy_id)
             )
-            return vacancy_id, details
+            return vacancy_id, details, None
         except Exception as e:
-            logger.error(f'{worker_prefix}Ошибка получения деталей вакансии {vacancy_id}: {e}')
-            return vacancy_id, None
+            errors_count += 1
+            error_msg = str(e).lower()
+            if '403' in error_msg or 'forbidden' in error_msg:
+                errors_403_count += 1
+            last_error = e
+            # Логируем только каждую 10-ю ошибку, чтобы не засорять логи
+            if errors_count % 10 == 0 or errors_count <= 3:
+                logger.warning(f'{worker_prefix}Ошибка получения деталей вакансии {vacancy_id}: {e}')
+            return vacancy_id, None, e
 
     # Создаем задачи для параллельного выполнения
     tasks = [fetch_single(vid) for vid in vacancy_ids]
@@ -2142,9 +2262,24 @@ async def _fetch_vacancy_details_batch_async(parser, vacancy_ids, worker_prefix)
 
     details_map = {}
     for result in results:
-        if isinstance(result, tuple) and len(result) == 2:
-            vacancy_id, details = result
-            details_map[vacancy_id] = details
+        if isinstance(result, Exception):
+            errors_count += 1
+            continue
+        if isinstance(result, tuple) and len(result) == 3:
+            vacancy_id, details, error = result
+            if details:
+                details_map[vacancy_id] = details
+
+    # Логируем итоговую статистику
+    total = len(vacancy_ids)
+    success = len(details_map)
+    if errors_count > 0:
+        logger.warning(
+            f'{worker_prefix}Загрузка деталей завершена: {success}/{total} успешно, '
+            f'ошибок: {errors_count} (403: {errors_403_count})'
+        )
+    else:
+        logger.debug(f'{worker_prefix}Загрузка деталей завершена: {success}/{total} успешно')
 
     return details_map
 
@@ -2159,6 +2294,15 @@ def _build_parallel_role_signatures(
     max_concurrent_roles: int,
     batch_size: int,
     no_delays: bool,
+    experience: Optional[str] = None,
+    employment: Optional[str] = None,
+    schedule: Optional[str] = None,
+    only_with_salary: bool = False,
+    period: Optional[int] = None,
+    date_from: Optional[str] = None,
+    date_to: Optional[str] = None,
+    salary_from: Optional[int] = None,
+    salary_to: Optional[int] = None,
 ) -> List[Any]:
     """
     Формирует список Celery-задач для распараллеленного парсинга ролей.
@@ -2194,6 +2338,15 @@ def _build_parallel_role_signatures(
                 batch_size,
                 no_delays,
                 worker_idx + 1,
+                experience,
+                employment,
+                schedule,
+                only_with_salary,
+                period,
+                date_from,
+                date_to,
+                salary_from,
+                salary_to,
             ).set(queue='headhunter')
         )
 
@@ -2302,7 +2455,16 @@ def parse_single_role_batch(
     max_concurrent_roles: int,
     batch_size: int,
     no_delays: bool,
-    worker_id: int
+    worker_id: int,
+    experience: Optional[str] = None,
+    employment: Optional[str] = None,
+    schedule: Optional[str] = None,
+    only_with_salary: bool = False,
+    period: Optional[int] = None,
+    date_from: Optional[str] = None,
+    date_to: Optional[str] = None,
+    salary_from: Optional[int] = None,
+    salary_to: Optional[int] = None,
 ):
     """
     Подзадача для парсинга батча ролей в параллельном режиме.
@@ -2344,7 +2506,9 @@ def parse_single_role_batch(
         # Запускаем обычную логику парсинга для этого батча
         return _parse_roles_batch(
             it_roles, area, pages, delay, get_details,
-            max_concurrent_roles, batch_size, no_delays, worker_id, 1  # parallel_workers=1 для подзадач
+            max_concurrent_roles, batch_size, no_delays, worker_id, 1,  # parallel_workers=1 для подзадач
+            experience, employment, schedule, only_with_salary,
+            period, date_from, date_to, salary_from, salary_to
         )
 
     except Exception as e:
@@ -2362,7 +2526,9 @@ def parse_single_role_batch(
 
 
 def _parse_roles_batch(it_roles, area, pages, delay, get_details,
-                      max_concurrent_roles, batch_size, no_delays, worker_id=None, parallel_workers=1):
+                      max_concurrent_roles, batch_size, no_delays, worker_id=None, parallel_workers=1,
+                      experience=None, employment=None, schedule=None, only_with_salary=False,
+                      period=None, date_from=None, date_to=None, salary_from=None, salary_to=None):
     """
     Основная логика парсинга батча ролей (выделена в отдельную функцию).
     """
@@ -2384,9 +2550,12 @@ def _parse_roles_batch(it_roles, area, pages, delay, get_details,
     total_roles = len(it_roles)
     task_start_time = time.time()
 
-    # Счетчики для защиты от блокировок
+    # Счетчики для защиты от блокировок и статистики ошибок
     consecutive_403_errors = 0
     max_consecutive_403 = 3  # После 3 подряд 403 останавливаем worker
+    total_403_errors = 0  # Общее количество 403 ошибок
+    total_details_errors = 0  # Ошибки при загрузке деталей
+    total_other_errors = 0  # Другие ошибки
 
     # Обрабатываем роли батчами для контроля нагрузки
     effective_batch_size = batch_size if batch_size > 0 and batch_size < len(it_roles) else len(it_roles)
@@ -2412,10 +2581,69 @@ def _parse_roles_batch(it_roles, area, pages, delay, get_details,
                 role_updated_vacancies = 0
                 role_errors = 0
 
-                # Оптимизированные параметры для максимального покрытия (20 страниц по 100 вакансий = 2000 лимит)
-                max_pages_per_role = 20   # 20 страниц для полного покрытия
-                per_page_limit = 100      # 100 вакансий на страницу (лимит API HH)
+                # Оптимизированные параметры для максимального покрытия (лимит 2000 вакансий)
+                # Если pages <= 20: используем 100 вакансий на страницу (20 × 100 = 2000)
+                # Если pages > 20: используем 10 вакансий на страницу (200 × 10 = 2000)
+                if pages <= 20:
+                    per_page_limit = 100  # 100 вакансий на страницу (лимит API HH)
+                    max_pages_per_role = 20  # Максимум 20 страниц
+                else:
+                    per_page_limit = 10   # 10 вакансий на страницу
+                    max_pages_per_role = 200  # Максимум 200 страниц (200 × 10 = 2000)
+                
                 actual_pages = min(pages if pages > 0 else max_pages_per_role, max_pages_per_role)
+
+                # Сначала получаем общее количество вакансий и страниц для роли
+                logger.info(f'{worker_prefix}[INFO] Получение информации о количестве вакансий для роли {role.name} (ID: {role.id})...')
+                info_params = {
+                    'professional_role': role.id,
+                    'area': area,
+                    'per_page': 1,  # Минимум для получения метаданных
+                    'page': 0
+                }
+                logger.debug(f'{worker_prefix}[DEBUG] Параметры информационного запроса: {info_params}')
+                
+                try:
+                    info_result = parser.search_vacancies(**info_params)
+                except Exception as e:
+                    logger.warning(f'{worker_prefix}Роль {role.name}: ошибка при получении информации о количестве вакансий: {e}, используем запрошенное количество страниц')
+                    info_result = None
+                
+                if not info_result or 'found' not in info_result:
+                    logger.warning(f'{worker_prefix}Роль {role.name}: не удалось получить информацию о количестве вакансий, используем запрошенное количество страниц')
+                    total_found = 0
+                    total_pages_api = actual_pages
+                else:
+                    total_found = info_result.get('found', 0)
+                    # ВАЖНО: API возвращает pages для per_page=1, нужно пересчитать для нашего per_page_limit
+                    pages_api_info = info_result.get('pages', 0)  # Страниц при per_page=1
+                    
+                    # Пересчитываем количество страниц для нашего per_page_limit
+                    if total_found > 0 and per_page_limit > 0:
+                        total_pages_api = (total_found + per_page_limit - 1) // per_page_limit  # Округление вверх
+                    else:
+                        total_pages_api = 0
+                    
+                    logger.debug(f'{worker_prefix}Роль {role.name}: API вернул found={total_found}, pages (при per_page=1)={pages_api_info}, пересчитано для per_page={per_page_limit}: {total_pages_api} страниц')
+                    
+                    # Рассчитываем оптимальное количество страниц на основе лимита 2000 вакансий
+                    max_vacancies_limit = 2000
+                    if total_found > 0:
+                        # Рассчитываем количество страниц для достижения лимита
+                        pages_needed_for_limit = (max_vacancies_limit + per_page_limit - 1) // per_page_limit  # Округление вверх
+                        
+                        # Берем минимум из: нужного для лимита, доступного в API, запрошенного
+                        pages_needed = min(
+                            pages_needed_for_limit,
+                            total_pages_api,
+                            actual_pages
+                        )
+                        
+                        actual_pages = pages_needed
+                        logger.info(f'{worker_prefix}Роль {role.name}: найдено {total_found} вакансий, доступно {total_pages_api} страниц (при {per_page_limit} вакансий/страницу), будем парсить {actual_pages} страниц (лимит: {max_vacancies_limit} вакансий)')
+                    else:
+                        logger.info(f'{worker_prefix}Роль {role.name}: вакансий не найдено, пропускаем')
+                        continue
 
                 logger.info(f'{worker_prefix}Начинаем парсинг роли {role.name}: {actual_pages} страниц по {per_page_limit} вакансий')
 
@@ -2438,19 +2666,10 @@ def _parse_roles_batch(it_roles, area, pages, delay, get_details,
                             error_msg = str(api_error).lower()
                             if '403' in error_msg or 'forbidden' in error_msg or 'доступ запрещён' in error_msg:
                                 consecutive_403_errors += 1
-                                if consecutive_403_errors >= max_consecutive_403:
-                                    logger.error(f'{worker_prefix}🚫 СЛИШКОМ МНОГО 403 ОШИБОК ({consecutive_403_errors}/{max_consecutive_403}). '
-                                                f'Возможная блокировка IP. Останавливаем worker {worker_id} на 15 минут...')
-                                    time.sleep(900)  # 15 минут паузы
-                                    consecutive_403_errors = 0  # Сбрасываем после долгой паузы
-                                    continue
-
-                                # Прогрессивная пауза при 403: 5 мин, 7 мин, 10 мин
-                                block_pause = [300, 420, 600][min(consecutive_403_errors - 1, 2)]
-                                logger.warning(f'{worker_prefix}🚫 Доступ запрещён (403) для роли {role.name} на странице {page + 1}. '
-                                              f'Попытка {consecutive_403_errors}/{max_consecutive_403}. '
-                                              f'Пауза {block_pause//60} мин для снятия блокировки...')
-                                time.sleep(block_pause)
+                                # Простая пауза 2 секунды при 403
+                                logger.warning(f'{worker_prefix}Доступ запрещён (403) для роли {role.name} на странице {page + 1}. '
+                                              f'Пауза 2 сек...')
+                                time.sleep(2.0)
                                 continue
 
                             elif '400' in error_msg or 'rate' in error_msg or 'block' in error_msg:
@@ -2511,29 +2730,29 @@ def _parse_roles_batch(it_roles, area, pages, delay, get_details,
                                 error_msg = str(e).lower()
                                 if '403' in error_msg or 'forbidden' in error_msg or 'доступ запрещён' in error_msg:
                                     consecutive_403_errors += 1
+                                    total_403_errors += 1
+                                    total_details_errors += 1
                                     if consecutive_403_errors >= max_consecutive_403:
-                                        logger.error(f'{worker_prefix} СЛИШКОМ МНОГО 403 ОШИБОК ПРИ ЗАГРУЗКЕ ДЕТАЛЕЙ ({consecutive_403_errors}/{max_consecutive_403}). '
+                                        logger.error(f'{worker_prefix}СЛИШКОМ МНОГО 403 ОШИБОК ПРИ ЗАГРУЗКЕ ДЕТАЛЕЙ ({consecutive_403_errors}/{max_consecutive_403}). '
                                                     f'Останавливаем worker {worker_id} на 5 секунд...')
                                         time.sleep(5)  # 5 секунд паузы
                                         consecutive_403_errors = 0
                                         continue
 
-                                    block_pause = [5, 10, 15][min(consecutive_403_errors - 1, 2)]
-                                    logger.warning(f'{worker_prefix}🚫 Доступ запрещён (403) при загрузке деталей. '
-                                                  f'Попытка {consecutive_403_errors}/{max_consecutive_403}. '
-                                                  f'Пауза {block_pause} секунд...')
-                                    time.sleep(block_pause)
+                                    # Простая пауза 2 секунды при 403
+                                    # Логируем только каждую 5-ю ошибку
+                                    if consecutive_403_errors % 5 == 0 or consecutive_403_errors <= 3:
+                                        logger.warning(f'{worker_prefix}Доступ запрещён (403) при загрузке деталей (всего: {consecutive_403_errors}). Пауза 2 сек...')
+                                    time.sleep(2.0)
                                     continue
 
-                                logger.error(f'{worker_prefix}Ошибка асинхронной загрузки деталей: {e}')
-                                # Fallback: синхронная загрузка
-                                for vacancy_obj in vacancy_objects:
-                                    try:
-                                        details = parser.get_vacancy_details(vacancy_obj.hh_id)
-                                        if details:
-                                            _update_vacancy_from_api_data(vacancy_obj, details)
-                                    except Exception as detail_error:
-                                        logger.error(f'{worker_prefix}Ошибка загрузки деталей вакансии {vacancy_obj.hh_id}: {detail_error}')
+                                # Для других ошибок логируем только первую
+                                total_other_errors += 1
+                                total_details_errors += 1
+                                logger.warning(f'{worker_prefix}Ошибка асинхронной загрузки деталей: {e}. Пропускаем детали для этой страницы.')
+                                
+                                # Fallback: синхронная загрузка только для критичных случаев (не используем, т.к. это может привести к еще большим 403)
+                                # Вакансии сохранятся без деталей, детали можно загрузить позже
 
                         # ПАКЕТНОЕ СОХРАНЕНИЕ В БД (максимальная производительность!)
                         if vacancy_objects:
@@ -2613,7 +2832,13 @@ def _parse_roles_batch(it_roles, area, pages, delay, get_details,
         'new_vacancies': total_new_vacancies,
         'updated_vacancies': total_updated_vacancies,
         'total_time_minutes': total_time / 60,
-        'status': 'completed'
+        'status': 'completed',
+        'errors': {
+            'total_403_errors': total_403_errors,
+            'total_details_errors': total_details_errors,
+            'total_other_errors': total_other_errors
+        },
+        'metrics': parser.metrics.to_dict() if parser.metrics else {}
     }
 
 

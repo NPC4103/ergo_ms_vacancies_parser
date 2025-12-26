@@ -2,6 +2,9 @@ import re
 import time
 import logging
 import requests
+from requests.adapters import HTTPAdapter
+from requests.exceptions import SSLError as RequestsSSLError
+import ssl
 import random
 from datetime import datetime
 from dataclasses import dataclass, field
@@ -295,6 +298,45 @@ class ParsingMetrics:
         )
 
 
+class IPBlockingTracker:
+    """Трекер блокировок IP для отслеживания 403 ошибок и адаптивных задержек"""
+    
+    _instance = None
+    
+    def __new__(cls):
+        if cls._instance is None:
+            cls._instance = super().__new__(cls)
+            cls._instance._403_count = 0
+            cls._instance._last_403_time = 0
+            cls._instance._adaptive_delay_multiplier = 1.0
+        return cls._instance
+    
+    def record_403(self) -> None:
+        """Записать факт 403 ошибки"""
+        current_time = time.time()
+        self._403_count += 1
+        self._last_403_time = current_time
+        
+        # Если много 403 за короткое время - увеличиваем множитель задержки
+        if self._403_count >= 10:
+            self._adaptive_delay_multiplier = min(self._adaptive_delay_multiplier * 1.5, 5.0)
+            logger.warning(f'[BLOCKING] Обнаружено {self._403_count} ошибок 403. Увеличиваем задержки в {self._adaptive_delay_multiplier:.1f}x')
+    
+    def reset_on_success(self) -> None:
+        """Сбросить счетчик при успешном запросе"""
+        if self._403_count > 0:
+            # Постепенно уменьшаем множитель при успешных запросах
+            self._adaptive_delay_multiplier = max(self._adaptive_delay_multiplier * 0.95, 1.0)
+            # Сбрасываем счетчик если прошло достаточно времени
+            if time.time() - self._last_403_time > 300:  # 5 минут без 403
+                self._403_count = 0
+                self._adaptive_delay_multiplier = 1.0
+    
+    def get_adaptive_delay_multiplier(self) -> float:
+        """Получить текущий множитель задержки"""
+        return self._adaptive_delay_multiplier
+
+
 class HeadHunterParser:
     """Парсер для работы с API HeadHunter с ротацией User-Agent и jitter"""
 
@@ -302,6 +344,11 @@ class HeadHunterParser:
     MAX_RETRIES = 3
     BASE_DELAY = 1.0
     MAX_DELAY = 60.0
+    
+    # Лимит API HeadHunter: 30 запросов в секунду
+    API_RATE_LIMIT_PER_SECOND = 30
+    MIN_DELAY_BETWEEN_REQUESTS = 1.0 / 30  # ≈ 0.033 сек
+    SAFE_MIN_DELAY = 0.04  # Безопасная минимальная задержка (25 запросов/сек вместо 30)
 
     def __init__(self, metrics: Optional[ParsingMetrics] = None, use_jitter: bool = True,
                  rotate_user_agent: bool = True, use_proxy: bool = False,
@@ -316,20 +363,44 @@ class HeadHunterParser:
         self.ua_rotator = UserAgentRotator() if rotate_user_agent else None
         self.jitter = RequestJitter(base_delay=self.BASE_DELAY) if use_jitter else None
         self.proxy_rotator = ProxyRotator(custom_proxies) if use_proxy else None
+        self.blocking_tracker = IPBlockingTracker()
 
         # Счетчики для ротации
         self.requests_since_ua_rotation = 0
         self.requests_since_proxy_rotation = 0
         self.session_start_time = time.time()
+        
+        # Трекер времени последнего запроса для контроля rate limit
+        self._last_request_time = 0.0
+        self._request_times = []  # Список времен последних запросов (скользящее окно)
 
-        # Начальный User-Agent
+        # Начальный User-Agent (должен быть вызван до создания сессии)
         self._update_headers()
+        
+        # Создаем HTTP сессию для переиспользования соединений
+        # Увеличиваем размер connection pool для избежания предупреждений
+        adapter = HTTPAdapter(
+            pool_connections=20,  # Количество пулов соединений
+            pool_maxsize=50,  # Максимальное количество соединений в пуле
+            max_retries=3
+        )
+        self.session = requests.Session()
+        self.session.mount('http://', adapter)
+        self.session.mount('https://', adapter)
+        self.session.headers.update(self.headers)
 
     def _update_headers(self):
         """Обновить заголовки с новым User-Agent"""
-        user_agent = (self.ua_rotator.get_random_user_agent() if self.ua_rotator
-                     else 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36')
+        # Получаем User-Agent (с fallback если rotator не инициализирован)
+        if self.ua_rotator:
+            try:
+                user_agent = self.ua_rotator.get_random_user_agent()
+            except Exception:
+                user_agent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+        else:
+            user_agent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
 
+        # Всегда создаем headers (даже если что-то пошло не так)
         self.headers = {
             'User-Agent': user_agent,
             'Accept': 'application/json, text/plain, */*',
@@ -339,6 +410,10 @@ class HeadHunterParser:
             'Connection': 'keep-alive',
             'Upgrade-Insecure-Requests': '1',
         }
+        
+        # Обновляем заголовки сессии (если она уже создана)
+        if hasattr(self, 'session') and self.session:
+            self.session.headers.update(self.headers)
 
     def _should_rotate_user_agent(self) -> bool:
         """Определить, нужно ли ротировать User-Agent"""
@@ -385,17 +460,71 @@ class HeadHunterParser:
 
         return self._current_proxy
 
-    def _get_delay(self, is_page_turn: bool = False, is_detail_request: bool = False) -> float:
-        """Получить задержку с учетом jitter"""
-        if not self.jitter:
-            return self.BASE_DELAY
+    def _recreate_session(self):
+        """Закрывает текущую сессию и создает новую."""
+        if hasattr(self, 'session') and self.session:
+            try:
+                self.session.close()
+                logger.debug("Старая HTTP-сессия закрыта.")
+            except Exception as e:
+                logger.warning(f"Ошибка при закрытии старой сессии: {e}")
+        
+        # Создаем новую сессию с увеличенным connection pool
+        adapter = HTTPAdapter(
+            pool_connections=20,
+            pool_maxsize=50,
+            max_retries=3
+        )
+        self.session = requests.Session()
+        self.session.mount('http://', adapter)
+        self.session.mount('https://', adapter)
+        self.session.headers.update(self.headers)
+        logger.debug("Новая HTTP-сессия создана.")
 
-        if is_page_turn:
-            return self.jitter.get_page_turn_delay()
+    def _get_delay(self, is_page_turn: bool = False, is_detail_request: bool = False) -> float:
+        """Получить задержку между запросами с учетом типа запроса и лимита API"""
+        if not self.use_jitter or not self.jitter:
+            base_delay = self.BASE_DELAY
+        elif is_page_turn:
+            base_delay = self.jitter.get_page_turn_delay()
         elif is_detail_request:
-            return self.jitter.get_detail_request_delay()
+            base_delay = self.jitter.get_detail_request_delay()
         else:
-            return self.jitter.get_delay()
+            base_delay = self.jitter.get_delay()
+        
+        # Убеждаемся, что задержка не меньше безопасного минимума для соблюдения лимита API
+        return max(base_delay, self.SAFE_MIN_DELAY)
+    
+    def _enforce_rate_limit(self) -> float:
+        """
+        Обеспечивает соблюдение лимита 30 запросов в секунду.
+        Возвращает необходимую задержку перед следующим запросом.
+        """
+        current_time = time.time()
+        
+        # Очищаем старые записи (старше 1 секунды)
+        self._request_times = [t for t in self._request_times if current_time - t < 1.0]
+        
+        # Если уже достигли лимита (30 запросов за последнюю секунду), ждем
+        if len(self._request_times) >= self.API_RATE_LIMIT_PER_SECOND:
+            # Вычисляем, сколько нужно подождать до освобождения слота
+            oldest_request_time = min(self._request_times)
+            wait_time = 1.0 - (current_time - oldest_request_time)
+            if wait_time > 0:
+                logger.debug(f"Rate limit: достигнут лимит {self.API_RATE_LIMIT_PER_SECOND} запросов/сек, ожидание {wait_time:.3f} сек")
+                return max(wait_time, self.SAFE_MIN_DELAY)
+        
+        # Добавляем текущий запрос в список
+        self._request_times.append(current_time)
+        
+        # Если с последнего запроса прошло меньше минимальной задержки, возвращаем необходимую задержку
+        if self._last_request_time > 0:
+            time_since_last = current_time - self._last_request_time
+            if time_since_last < self.SAFE_MIN_DELAY:
+                return self.SAFE_MIN_DELAY - time_since_last
+        
+        self._last_request_time = current_time
+        return 0.0  # Задержка не нужна
     
     def _make_request(
         self,
@@ -420,6 +549,7 @@ class HeadHunterParser:
         """
         max_retries = max_retries or self.MAX_RETRIES
         last_error = None
+        current_proxy = None  # Инициализируем перед циклом
 
         # Ротируем User-Agent и прокси если нужно
         if self._should_rotate_user_agent():
@@ -430,19 +560,42 @@ class HeadHunterParser:
 
         for attempt in range(max_retries):
             try:
+                # Обеспечиваем соблюдение лимита 30 запросов в секунду
+                rate_limit_delay = self._enforce_rate_limit()
+                if rate_limit_delay > 0:
+                    time.sleep(rate_limit_delay)
+                
                 # Добавляем jitter задержку перед запросом (кроме первого)
                 if attempt > 0 or self.requests_since_ua_rotation > 0:
                     delay = self._get_delay(is_page_turn, is_detail_request)
+                    # Увеличиваем задержку при наличии блокировок
+                    adaptive_multiplier = self.blocking_tracker.get_adaptive_delay_multiplier()
+                    delay *= adaptive_multiplier
+                    # Убеждаемся, что итоговая задержка не меньше безопасного минимума
+                    delay = max(delay, self.SAFE_MIN_DELAY)
                     time.sleep(delay)
-                    logger.debug(f"Jitter delay: {delay:.2f}s")
+                    logger.debug(f"Jitter delay: {delay:.2f}s (множитель: {adaptive_multiplier:.1f}x)")
 
                 # Получаем текущий прокси
                 current_proxy = self._get_current_proxy()
                 self.requests_since_ua_rotation += 1
                 self.requests_since_proxy_rotation += 1
 
-                response = requests.get(url, params=params, headers=self.headers,
-                                      proxies=current_proxy, timeout=30)
+                # Используем сессию для переиспользования соединений
+                try:
+                    response = self.session.get(url, params=params, proxies=current_proxy, timeout=30)
+                except (requests.ConnectionError, requests.RequestException) as session_error:
+                    # Если ошибка сессии, создаем новую сессию и повторяем попытку
+                    error_msg = str(session_error).lower()
+                    if 'connection' in error_msg and ('closed' in error_msg or 'reset' in error_msg):
+                        logger.warning(f"Соединение закрыто, создаем новую сессию (попытка {attempt + 1}/{max_retries})")
+                        self.session.close()
+                        self.session = requests.Session()
+                        self.session.headers.update(self.headers)
+                        # Повторяем запрос с новой сессией
+                        response = self.session.get(url, params=params, proxies=current_proxy, timeout=30)
+                    else:
+                        raise
 
                 # Обработка rate limiting (429 Too Many Requests)
                 if response.status_code == 429:
@@ -464,10 +617,14 @@ class HeadHunterParser:
                 if response.status_code == 403:
                     self.metrics.record_request(success=False)
                     self.metrics.record_error(f"403 Forbidden для {url}")
-                    logger.error("Доступ запрещён (403). Возможно, временная блокировка IP.")
-                    # Увеличенная пауза при 403
-                    delay = min(self.BASE_DELAY * (2 ** attempt) * 5, self.MAX_DELAY)
-                    time.sleep(delay)
+                    
+                    # Записываем факт блокировки в глобальный трекер
+                    self.blocking_tracker.record_403()
+                    
+                    # Логируем только каждую 5-ю ошибку 403, чтобы не засорять логи
+                    if self.blocking_tracker._403_count % 5 == 0 or self.blocking_tracker._403_count <= 3:
+                        logger.warning(f"Доступ запрещён (403) для {url}. Всего 403 ошибок: {self.blocking_tracker._403_count}. Пауза 2 сек...")
+                    time.sleep(2.0)
 
                     # Ротируем User-Agent и прокси при 403
                     self._rotate_user_agent()
@@ -478,6 +635,8 @@ class HeadHunterParser:
                 # Успешный запрос
                 response.raise_for_status()
                 self.metrics.record_request(success=True)
+                # Сбрасываем счетчик блокировок при успешном запросе
+                self.blocking_tracker.reset_on_success()
                 return response.json()
                 
             except requests.Timeout as e:
@@ -486,11 +645,32 @@ class HeadHunterParser:
                 self.metrics.record_error(f"Timeout для {url}")
                 logger.warning("Timeout при запросе %s (попытка %d/%d)", url, attempt + 1, max_retries)
                 
+            except (RequestsSSLError, ssl.SSLError) as e:
+                last_error = e
+                self.metrics.record_request(success=False)
+                self.metrics.record_error(f"SSL error для {url}")
+                logger.warning("SSL ошибка для %s (попытка %d/%d): %s", url, attempt + 1, max_retries, str(e)[:100])
+                
+                # Пересоздаем сессию при SSL ошибках
+                self._recreate_session()
+                
+                # Ротируем прокси при SSL ошибке
+                if self.use_proxy and self.proxy_rotator and current_proxy:
+                    self.proxy_rotator.mark_proxy_failed(current_proxy)
+                    self._rotate_proxy()
+                    
             except requests.ConnectionError as e:
                 last_error = e
                 self.metrics.record_request(success=False)
-                self.metrics.record_error(f"Connection error для {url}")
-                logger.warning("Ошибка соединения %s (попытка %d/%d)", url, attempt + 1, max_retries)
+                error_msg = str(e).lower()
+                
+                # Обработка "connection already closed" или "connection broken" - пересоздаем сессию
+                if 'connection' in error_msg and ('closed' in error_msg or 'reset' in error_msg or 'broken' in error_msg):
+                    logger.warning("Соединение закрыто, пересоздаем сессию (попытка %d/%d)", attempt + 1, max_retries)
+                    self._recreate_session()
+                else:
+                    self.metrics.record_error(f"Connection error для {url}")
+                    logger.warning("Ошибка соединения %s (попытка %d/%d)", url, attempt + 1, max_retries)
 
                 # Ротируем прокси при ошибке соединения
                 if self.use_proxy and self.proxy_rotator and current_proxy:
@@ -516,8 +696,29 @@ class HeadHunterParser:
                 time.sleep(delay)
         
         # Все попытки исчерпаны
-        logger.error("Не удалось выполнить запрос %s после %d попыток: %s", url, max_retries, last_error)
+        # Логируем только для детальных запросов или если это не 403 ошибка
+        if is_detail_request or (last_error and '403' not in str(last_error)):
+            logger.error("Не удалось выполнить запрос %s после %d попыток: %s", url, max_retries, last_error)
+        else:
+            logger.debug("Не удалось выполнить запрос %s после %d попыток (403): %s", url, max_retries, last_error)
+        
+        # Пересоздаем сессию при полном провале всех попыток
+        try:
+            self.session.close()
+        except Exception:
+            pass
+        self.session = requests.Session()
+        self.session.headers.update(self.headers)
+        
         return None
+    
+    def __del__(self):
+        """Закрываем сессию при удалении объекта"""
+        if hasattr(self, 'session'):
+            try:
+                self.session.close()
+            except Exception:
+                pass
     
     def search_vacancies(self, text=None, area=None, experience=None, employment=None,
                         schedule=None, professional_role=None, per_page=100, page=0,
@@ -591,7 +792,7 @@ class HeadHunterParser:
     def parse_vacancy(self, vacancy_data):
         """Парсинг данных вакансии в модель"""
         if not vacancy_data:
-            print("Ошибка: vacancy_data is None")
+            logger.error("Ошибка: vacancy_data is None")
             return None
             
         try:
@@ -693,7 +894,7 @@ class HeadHunterParser:
             return vacancy
             
         except Exception as e:
-            print(f"Ошибка при парсинге вакансии {vacancy_data.get('id', 'unknown')}: {e}")
+            logger.error("Ошибка при парсинге вакансии %s: %s", vacancy_data.get('id', 'unknown'), e)
             return None
     
     def _get_professional_role_name(self, professional_roles):
@@ -790,7 +991,7 @@ class HeadHunterParser:
                     break
             
         except Exception as e:
-            print(f"Ошибка при извлечении секций из описания: {e}")
+            logger.warning("Ошибка при извлечении секций из описания: %s", e)
         
         return result
     
@@ -953,7 +1154,7 @@ def parse_vacancies_by_text(text_list, area=113, pages=2, delay=1.0, get_details
     total_updated_vacancies = 0
     
     for i, text in enumerate(text_list, 1):
-        print(f'\n[{i}/{len(text_list)}] Парсинг запроса: "{text}"')
+        logger.info('[%d/%d] Парсинг запроса: "%s"', i, len(text_list), text)
         
         vacancies_to_save = []
         query_vacancies = 0
@@ -967,7 +1168,7 @@ def parse_vacancies_by_text(text_list, area=113, pages=2, delay=1.0, get_details
                 logger.debug('Страница %d не существует (всего %d)', page + 1, total_available_pages)
                 break
             
-            print(f'  Страница {page + 1} из {min(pages, total_available_pages)}...')
+            logger.debug('Страница %d из %d', page + 1, min(pages, total_available_pages))
             
             # Поиск вакансий
             search_result = parser.search_vacancies(
@@ -980,7 +1181,7 @@ def parse_vacancies_by_text(text_list, area=113, pages=2, delay=1.0, get_details
             )
             
             if not search_result:
-                print(f'  Не удалось получить данные для страницы {page + 1}')
+                logger.warning('Не удалось получить данные для страницы %d', page + 1)
                 continue
             
             # Обновляем информацию о доступных страницах (только на первой странице)
@@ -1004,11 +1205,10 @@ def parse_vacancies_by_text(text_list, area=113, pages=2, delay=1.0, get_details
                 company_name = (vacancy_data.get('employer') or {}).get('name', 'Не указано')
                 city = (vacancy_data.get('area') or {}).get('name', 'не указан')
                 
-                print(f'    [{j}/{len(vacancies)}] {city} | {vacancy_title} | {company_name}', end=' ')
-                
                 # Пропускаем уже существующие вакансии
                 if vacancy_id in existing_hh_ids:
-                    print('Уже существует. ')
+                    logger.debug('[%d/%d] %s | %s | %s - уже существует', 
+                               j, len(vacancies), city, vacancy_title, company_name)
                     continue
                 
                 # Получаем детальную информацию о вакансии для навыков
@@ -1059,18 +1259,22 @@ def parse_vacancies_by_text(text_list, area=113, pages=2, delay=1.0, get_details
                             for field, value in new_data.items():
                                 setattr(existing_vacancy, field, value)
                             existing_vacancy.save()
-                            print('обновлена (новая версия)')
+                            logger.info('[%d/%d] %s | %s | %s - обновлена (новая версия)', 
+                                      j, len(vacancies), city, vacancy_title, company_name)
                             query_updated_vacancies += 1
                         else:
-                            print('без изменений')
+                            logger.debug('[%d/%d] %s | %s | %s - без изменений', 
+                                       j, len(vacancies), city, vacancy_title, company_name)
                     else:
                         # Новая вакансия
                         vacancies_to_save.append(vacancy)
                         existing_hh_ids.add(vacancy_id)
-                        print('новая вакансия')
+                        logger.info('[%d/%d] %s | %s | %s - новая вакансия', 
+                                  j, len(vacancies), city, vacancy_title, company_name)
                         query_new_vacancies += 1
                 else:
-                    print('ошибка парсинга')
+                    logger.warning('[%d/%d] %s | %s | %s - ошибка парсинга', 
+                                 j, len(vacancies), city, vacancy_title, company_name)
                 
                 # Небольшая задержка между запросами детальной информации
                 if get_details:
@@ -1084,10 +1288,10 @@ def parse_vacancies_by_text(text_list, area=113, pages=2, delay=1.0, get_details
         if vacancies_to_save:
             Vacancy.objects.bulk_create(vacancies_to_save, ignore_conflicts=True)
             new_vacancies = len(vacancies_to_save)
-            print(f'  Сохранено {new_vacancies} новых вакансий')
+            logger.info('Запрос "%s": сохранено %d новых вакансий', text, new_vacancies)
             total_new_vacancies += new_vacancies
         else:
-            print(f'  Новых вакансий не найдено')
+            logger.debug('Запрос "%s": новых вакансий не найдено', text)
 
         # Выводим статистику по обновлениям
         if query_updated_vacancies > 0:
@@ -1135,17 +1339,17 @@ def parse_all_vacancies(pages_per_area=5, delay=1.0, max_total_pages=100, areas_
     
     # Получаем регионы
     areas = parser.get_areas()
-    print(f'Найдено {len(areas)} регионов для парсинга')
+    logger.info('Найдено %d регионов для парсинга', len(areas))
     
     # Получаем профессиональные роли (если нужно)
     roles = []
     if not areas_only:
         roles = parser.get_professional_roles()
-        print(f'Найдено {len(roles)} профессиональных ролей для парсинга')
+        logger.info('Найдено %d профессиональных ролей для парсинга', len(roles))
     
     # Загружаем существующие ID для проверки дубликатов
     existing_hh_ids = set(Vacancy.objects.values_list('hh_id', flat=True))
-    print(f'Загружено {len(existing_hh_ids)} существующих вакансий для проверки дубликатов')
+    logger.info('Загружено %d существующих вакансий для проверки дубликатов', len(existing_hh_ids))
     
     total_vacancies = 0
     total_new_vacancies = 0
@@ -1155,10 +1359,10 @@ def parse_all_vacancies(pages_per_area=5, delay=1.0, max_total_pages=100, areas_
     # Парсинг по регионам
     for i, area in enumerate(areas, 1):
         if total_pages_processed >= max_total_pages:
-            print(f'Достигнут лимит страниц ({max_total_pages}). Останавливаем парсинг.')
+            logger.warning('Достигнут лимит страниц (%d). Останавливаем парсинг.', max_total_pages)
             break
         
-        print(f'\n[{i}/{len(areas)}] Парсинг региона: {area["name"]} (ID: {area["id"]})')
+        logger.info('[%d/%d] Парсинг региона: %s (ID: %s)', i, len(areas), area["name"], area["id"])
         
         area_vacancies, area_new_vacancies, area_updated_vacancies, pages_processed = _parse_area(
             parser, area, existing_hh_ids, pages_per_area
@@ -1169,22 +1373,23 @@ def parse_all_vacancies(pages_per_area=5, delay=1.0, max_total_pages=100, areas_
         total_updated_vacancies += area_updated_vacancies
         total_pages_processed += pages_processed
         
-        print(f'Результат: {area_vacancies} обработано, {area_new_vacancies} новых, {area_updated_vacancies} обновлено, {pages_processed} страниц')
+        logger.info('Регион %s: обработано %d, новых %d, обновлено %d, страниц %d', 
+                   area["name"], area_vacancies, area_new_vacancies, area_updated_vacancies, pages_processed)
         
         # Задержка между регионами
         if i < len(areas):
-            print(f'Ожидание {delay} сек перед следующим регионом...')
+            logger.debug('Ожидание %.1f сек перед следующим регионом...', delay)
             time.sleep(delay)
     
     # Парсинг по профессиональным ролям (если включено)
     if roles and not areas_only:
-        print(f'\nНачинаем парсинг по {len(roles)} профессиональным ролям...')
+        logger.info('Начинаем парсинг по %d профессиональным ролям...', len(roles))
         
         for i, role in enumerate(roles, 1):
             if total_pages_processed >= max_total_pages:
                 break
             
-            print(f'\n[{i}/{len(roles)}] Парсинг роли: {role["name"]} (ID: {role["id"]})')
+            logger.info('[%d/%d] Парсинг роли: %s (ID: %s)', i, len(roles), role["name"], role["id"])
             
             role_vacancies, role_new_vacancies, role_updated_vacancies, pages_processed = _parse_role(
                 parser, role, existing_hh_ids, pages_per_area
@@ -1195,7 +1400,8 @@ def parse_all_vacancies(pages_per_area=5, delay=1.0, max_total_pages=100, areas_
             total_updated_vacancies += role_updated_vacancies
             total_pages_processed += pages_processed
             
-            print(f'Результат: {role_vacancies} обработано, {role_new_vacancies} новых, {role_updated_vacancies} обновлено, {pages_processed} страниц')
+            logger.info('Роль %s: обработано %d, новых %d, обновлено %d, страниц %d', 
+                       role["name"], role_vacancies, role_new_vacancies, role_updated_vacancies, pages_processed)
             
             # Задержка между ролями
             if i < len(roles):
@@ -1240,7 +1446,7 @@ def _parse_area(parser, area, existing_hh_ids, pages):
         )
         
         if not search_result:
-            print(f'  Не удалось получить данные для страницы {page + 1}')
+            logger.warning('Регион %s: не удалось получить данные для страницы %d', area['name'], page + 1)
             continue
         
         # Обновляем информацию о доступных страницах
@@ -1261,11 +1467,10 @@ def _parse_area(parser, area, existing_hh_ids, pages):
             company_name = (vacancy_data.get('employer') or {}).get('name', 'Не указано')
             city = (vacancy_data.get('area') or {}).get('name', 'не указан')
             
-            print(f'    [{j}/{len(vacancies)}] {city} | {vacancy_title} | {company_name}', end=' ')
-            
             # Пропускаем уже существующие вакансии
             if vacancy_id in existing_hh_ids:
-                print('Уже существует.')
+                logger.debug('[%d/%d] %s | %s | %s - уже существует', 
+                           j, len(vacancies), city, vacancy_title, company_name)
                 continue
             
             # Получаем детальную информацию о вакансии
@@ -1281,7 +1486,8 @@ def _parse_area(parser, area, existing_hh_ids, pages):
             
             # Проверяем, что у нас есть данные для парсинга
             if not vacancy_data:
-                print('нет данных для парсинга')
+                logger.warning('[%d/%d] %s | %s | %s - нет данных для парсинга', 
+                             j, len(vacancies), city, vacancy_title, company_name)
                 continue
                 
             vacancy = parser.parse_vacancy(vacancy_data)
@@ -1321,17 +1527,21 @@ def _parse_area(parser, area, existing_hh_ids, pages):
                         for field, value in new_data.items():
                             setattr(existing_vacancy, field, value)
                         existing_vacancy.save()
-                        print('обновлена (новая версия)')
+                        logger.info('[%d/%d] %s | %s | %s - обновлена (новая версия)', 
+                                  j, len(vacancies), city, vacancy_title, company_name)
                         total_updated_vacancies += 1
                     else:
-                        print('без изменений')
+                        logger.debug('[%d/%d] %s | %s | %s - без изменений', 
+                                   j, len(vacancies), city, vacancy_title, company_name)
                 else:
                     # Новая вакансия
                     vacancies_to_save.append(vacancy)
                     existing_hh_ids.add(vacancy_id)
-                    print('новая вакансия')
+                    logger.info('[%d/%d] %s | %s | %s - новая вакансия', 
+                              j, len(vacancies), city, vacancy_title, company_name)
             else:
-                print('ошибка парсинга')
+                logger.warning('[%d/%d] %s | %s | %s - ошибка парсинга', 
+                             j, len(vacancies), city, vacancy_title, company_name)
             
             # Задержка между запросами детальной информации
             time.sleep(0.1)
@@ -1342,12 +1552,12 @@ def _parse_area(parser, area, existing_hh_ids, pages):
     
     # Массовое сохранение вакансий
     if vacancies_to_save:
-        print(f'  Сохранение {len(vacancies_to_save)} вакансий в базу данных...')
+        logger.info('Регион %s: сохранение %d вакансий в базу данных...', area['name'], len(vacancies_to_save))
         Vacancy.objects.bulk_create(vacancies_to_save, ignore_conflicts=True)
-        print(f'  Сохранено {len(vacancies_to_save)} вакансий')
+        logger.info('Регион %s: сохранено %d вакансий', area['name'], len(vacancies_to_save))
         return total_vacancies, len(vacancies_to_save), total_updated_vacancies, pages_processed
     else:
-        print(f'  Новых вакансий не найдено')
+        logger.debug('Регион %s: новых вакансий не найдено', area['name'])
         return total_vacancies, 0, total_updated_vacancies, pages_processed
 
 
@@ -1372,7 +1582,7 @@ def _parse_role(parser, role, existing_hh_ids, pages):
         )
         
         if not search_result:
-            print(f'  Не удалось получить данные для страницы {page + 1}')
+            logger.warning('Роль %s: не удалось получить данные для страницы %d', role['name'], page + 1)
             continue
         
         # Обновляем информацию о доступных страницах
@@ -1393,11 +1603,10 @@ def _parse_role(parser, role, existing_hh_ids, pages):
             company_name = (vacancy_data.get('employer') or {}).get('name', 'Не указано')
             city = (vacancy_data.get('area') or {}).get('name', 'не указан')
             
-            print(f'    [{j}/{len(vacancies)}] {city} | {vacancy_title} | {company_name}', end=' ')
-            
             # Пропускаем уже существующие вакансии
             if vacancy_id in existing_hh_ids:
-                print('Уже существует.')
+                logger.debug('[%d/%d] %s | %s | %s - уже существует', 
+                           j, len(vacancies), city, vacancy_title, company_name)
                 continue
             
             # Получаем детальную информацию о вакансии
@@ -1413,7 +1622,8 @@ def _parse_role(parser, role, existing_hh_ids, pages):
             
             # Проверяем, что у нас есть данные для парсинга
             if not vacancy_data:
-                print('нет данных для парсинга')
+                logger.warning('[%d/%d] %s | %s | %s - нет данных для парсинга', 
+                             j, len(vacancies), city, vacancy_title, company_name)
                 continue
                 
             vacancy = parser.parse_vacancy(vacancy_data)
@@ -1453,17 +1663,21 @@ def _parse_role(parser, role, existing_hh_ids, pages):
                         for field, value in new_data.items():
                             setattr(existing_vacancy, field, value)
                         existing_vacancy.save()
-                        print('обновлена (новая версия)')
+                        logger.info('[%d/%d] %s | %s | %s - обновлена (новая версия)', 
+                                  j, len(vacancies), city, vacancy_title, company_name)
                         total_updated_vacancies += 1
                     else:
-                        print('без изменений')
+                        logger.debug('[%d/%d] %s | %s | %s - без изменений', 
+                                   j, len(vacancies), city, vacancy_title, company_name)
                 else:
                     # Новая вакансия
                     vacancies_to_save.append(vacancy)
                     existing_hh_ids.add(vacancy_id)
-                    print('новая вакансия')
+                    logger.info('[%d/%d] %s | %s | %s - новая вакансия', 
+                              j, len(vacancies), city, vacancy_title, company_name)
             else:
-                print('ошибка парсинга')
+                logger.warning('[%d/%d] %s | %s | %s - ошибка парсинга', 
+                             j, len(vacancies), city, vacancy_title, company_name)
             
             # Задержка между запросами детальной информации
             time.sleep(0.1)
@@ -1474,10 +1688,10 @@ def _parse_role(parser, role, existing_hh_ids, pages):
     
     # Массовое сохранение вакансий
     if vacancies_to_save:
-        print(f'  Сохранение {len(vacancies_to_save)} вакансий в базу данных...')
+        logger.info('Роль %s: сохранение %d вакансий в базу данных...', role['name'], len(vacancies_to_save))
         Vacancy.objects.bulk_create(vacancies_to_save, ignore_conflicts=True)
-        print(f'  Сохранено {len(vacancies_to_save)} вакансий')
+        logger.info('Роль %s: сохранено %d вакансий', role['name'], len(vacancies_to_save))
         return total_vacancies, len(vacancies_to_save), total_updated_vacancies, pages_processed
     else:
-        print(f'  Новых вакансий не найдено')
+        logger.debug('Роль %s: новых вакансий не найдено', role['name'])
         return total_vacancies, 0, total_updated_vacancies, pages_processed 

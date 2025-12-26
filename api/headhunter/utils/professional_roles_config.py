@@ -94,28 +94,31 @@ class ProfessionalRolesManager:
 
     def get_it_roles(self, force_refresh: bool = False) -> List[ProfessionalRole]:
         """
-        Получает список IT ролей из статического файла.
+        Получает список IT ролей из API HeadHunter.
 
-        Загружает роли из заранее подготовленного файла it_professional_roles.json,
-        который содержит только актуальные IT роли категории 11.
+        Всегда получает актуальные роли из API, игнорируя статические файлы.
 
         Args:
-            force_refresh: Игнорируется, роли всегда берутся из файла
+            force_refresh: Принудительно обновить кэш (получить из API)
 
         Returns:
             Список профессиональных ролей IT
         """
+        if force_refresh:
+            self._roles_cache = None
+
         if self._roles_cache is None:
             try:
-                roles_data = self._load_it_roles_from_file()
+                # Всегда получаем роли из API
+                roles_data = self._fetch_roles_from_api()
                 if roles_data:
                     self._roles_cache = roles_data
-                    logger.info(f'Загружено {len(self._roles_cache)} IT ролей из статического файла')
+                    logger.info(f'Загружено {len(self._roles_cache)} IT ролей из API HeadHunter')
                 else:
-                    logger.error('Не удалось загрузить IT роли из файла')
+                    logger.error('Не удалось получить IT роли из API')
                     self._roles_cache = []
             except Exception as e:
-                logger.error(f'Ошибка загрузки IT ролей: {e}')
+                logger.error(f'Ошибка получения IT ролей из API: {e}', exc_info=True)
                 self._roles_cache = []
 
         return self._roles_cache

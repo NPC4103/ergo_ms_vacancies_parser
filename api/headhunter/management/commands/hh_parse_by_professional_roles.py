@@ -66,11 +66,15 @@ TEXT: Dict[str, str] = {
     'parallel_note': 'Параллельные задачи отправлены в очередь.',
     'results_note': 'Результаты будут доступны после завершения всех подзадач.',
     'wait_not_supported': 'Примечание: --wait не поддерживается для параллельного режима.',
-    'check_status': '   Используйте Flower или проверьте статус задач вручную.',
+    'check_status': 'Проверьте статус задач через Django shell или логи Celery.',
     'wait_start': 'Ожидание завершения задачи...',
     'wait_progress': 'Прогресс отображается в логах выше.',
+    'wait_monitor': 'Для мониторинга используйте Django shell или логи Celery.',
     'wait_done': 'Задача завершена успешно.',
     'error_exec': 'Ошибка при выполнении: {error}',
+    'monitor_tasks': 'Для мониторинга задач используйте Django shell или логи Celery.',
+    'task_queued': 'Задача отправлена в очередь.',
+    'task_progress': 'Прогресс отображается в логах выше.',
 }
 
 
@@ -526,107 +530,122 @@ class Command(BaseCommand):
             if not config.quiet:
                 self.stdout.write('Синхронный запуск (без Celery worker)...')
             task = parse_vacancies_by_professional_roles.apply(kwargs=task_params)  # type: ignore[call-arg]
-            if task.successful():
-                result = task.get()
-                self._print_result(result, config)
-            else:
-                if config.json_output:
-                    self.stdout.write(json.dumps({'status': 'error', 'error': str(task.result)}, ensure_ascii=False))
-                else:
-                    self.stdout.write(TEXT['error_exec'].format(error=task.result))
+            self._handle_task_result(task, config)
             return
 
+        # Асинхронный запуск через Celery
         task = parse_vacancies_by_professional_roles.delay(**task_params)  # type: ignore[call-arg]
+        self._handle_async_task(task, config)
 
-        if config.json_output and not config.wait:
-            self.stdout.write(json.dumps({'task_id': str(task.id), 'status': 'queued'}, ensure_ascii=False))
-        elif config.quiet:
-            self.stdout.write(f'Task ID: {task.id}')
-        else:
-            self.stdout.write(TEXT['task_sent'].format(task_id=task.id))
-
-        if config.parallel_workers > 1:
-            self._handle_parallel_mode(task, config)
-        else:
-            self._handle_single_worker_mode(task, config)
-
-    def _handle_parallel_mode(self, task, config: ParsingConfig):
-        """Обрабатывает параллельный режим выполнения."""
+    def _handle_async_task(self, task, config: ParsingConfig):
+        """Обрабатывает асинхронную задачу Celery."""
+        is_parallel = config.parallel_workers > 1
+        
+        # JSON вывод
         if config.json_output:
-            self.stdout.write(json.dumps({'task_id': str(task.id), 'status': 'queued_parallel'}, ensure_ascii=False))
+            status = 'queued_parallel' if is_parallel else 'queued'
+            self.stdout.write(json.dumps({'task_id': str(task.id), 'status': status}, ensure_ascii=False))
+            if config.wait and not is_parallel:
+                self._wait_for_task(task, config)
             return
 
+        # Quiet режим
         if config.quiet:
             self.stdout.write(f'Task ID: {task.id}')
+            if config.wait and not is_parallel:
+                self._wait_for_task(task, config)
             return
 
-        self.stdout.write(TEXT['parallel_note'])
-        self.stdout.write(TEXT['results_note'])
-        self.stdout.write(f'Main Task ID: {task.id}')
-        self.stdout.write('')
-        self.stdout.write(TEXT['monitor_flower'])
-
-        if config.wait:
+        # Обычный вывод
+        if is_parallel:
+            self.stdout.write(TEXT['parallel_note'])
+            self.stdout.write(TEXT['results_note'])
+            self.stdout.write(f'Main Task ID: {task.id}')
             self.stdout.write('')
-            self.stdout.write(TEXT['wait_not_supported'])
-            self.stdout.write(TEXT['check_status'])
-
-    def _handle_single_worker_mode(self, task, config: ParsingConfig):
-        """Обрабатывает режим с одним воркером."""
-        if config.wait:
-            self._handle_wait_mode(task, config)
+            self.stdout.write(TEXT['monitor_tasks'])
+            
+            if config.wait:
+                self.stdout.write('')
+                self.stdout.write(TEXT['wait_not_supported'])
+                self.stdout.write(TEXT['check_status'])
         else:
-            if config.json_output:
-                self.stdout.write(json.dumps({'task_id': str(task.id), 'status': 'queued'}, ensure_ascii=False))
-            elif config.quiet:
-                self.stdout.write(f'Task ID: {task.id}')
+            self.stdout.write(TEXT['task_sent'].format(task_id=task.id))
+            if config.wait:
+                self.stdout.write('')
+                self._wait_for_task(task, config)
             else:
-                self.stdout.write('Задача отправлена в очередь.')
-                self.stdout.write('Прогресс отображается в логах выше.')
-                self.stdout.write(f'Task ID: {task.id}')
+                self.stdout.write(TEXT['task_progress'])
+    
+    def _handle_task_result(self, task, config: ParsingConfig):
+        """Обрабатывает результат синхронной задачи."""
+        if task.successful():
+            result = task.get()
+            if isinstance(result, dict):
+                # Добавляем время выполнения если его нет
+                if 'execution_time_seconds' not in result:
+                    result['execution_time_seconds'] = 0  # Для синхронных задач время не отслеживается
+            self._print_result(result, config)
+        else:
+            error_msg = str(task.result)
+            if config.json_output:
+                self.stdout.write(json.dumps({'status': 'error', 'error': error_msg}, ensure_ascii=False))
+            else:
+                self.stdout.write(self.style.ERROR(TEXT['error_exec'].format(error=error_msg)))  # type: ignore[attr-defined]
 
-    def _handle_wait_mode(self, task, config: ParsingConfig):
-        """Обрабатывает режим ожидания завершения задачи."""
-        if not config.quiet:
+    def _wait_for_task(self, task, config: ParsingConfig):
+        """Ожидает завершения задачи и выводит результат."""
+        if not config.quiet and not config.json_output:
             self.stdout.write(TEXT['wait_start'])
             self.stdout.write(TEXT['wait_progress'])
             self.stdout.write(TEXT['wait_monitor'])
             self.stdout.write('')
 
-        spinner = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏']
+        # ASCII спиннер для совместимости
+        spinner = ['|', '/', '-', '\\']
         i = 0
         start_time = time.time()
+        last_status_check = 0
 
-        while not task.ready():
-            if config.quiet or config.json_output:
-                time.sleep(1)
-                continue
+        try:
+            while not task.ready():
+                if config.quiet or config.json_output:
+                    time.sleep(1)
+                    continue
 
-            elapsed = time.time() - start_time
-            elapsed_str = f'{int(elapsed // 60):02d}:{int(elapsed % 60):02d}'
+                elapsed = int(time.time() - start_time)
+                # Обновляем статус каждые 2 секунды
+                if elapsed - last_status_check >= 2:
+                    minutes = elapsed // 60
+                    seconds = elapsed % 60
+                    elapsed_str = f'{minutes:02d}:{seconds:02d}'
+                    sys.stdout.write(f'\r{spinner[i % len(spinner)]} Выполняется... {elapsed_str} прошло')
+                    sys.stdout.flush()
+                    last_status_check = elapsed
 
-            sys.stdout.write(f'\r{spinner[i % 10]} Выполняется... {elapsed_str} прошло')
-            sys.stdout.flush()
-            time.sleep(1)
-            i += 1
+                time.sleep(0.5)
+                i += 1
 
-        # Очистка строки
-        if not config.quiet and not config.json_output:
-            sys.stdout.write('\r' + ' ' * 50 + '\r')
-            sys.stdout.flush()
+            # Очистка строки
+            if not config.quiet and not config.json_output:
+                sys.stdout.write('\r' + ' ' * 50 + '\r')
+                sys.stdout.flush()
 
-        if task.successful():
-            result = task.get()
-            if config.json_output:
-                self._print_result(result, config)
+            elapsed_time = time.time() - start_time
+
+            # Обработка результата
+            if task.successful():
+                result = task.get()
+                if isinstance(result, dict):
+                    result['execution_time_seconds'] = round(elapsed_time, 2)
+                self._handle_task_result(task, config)
             else:
-                self.stdout.write(TEXT['wait_done'])
-                self._print_result(result, config)
-        else:
-            if config.json_output:
-                self.stdout.write(json.dumps({'task_id': str(task.id), 'status': 'error', 'error': str(task.result)}, ensure_ascii=False))
-            else:
-                self.stdout.write(TEXT['error_exec'].format(error=task.result))
+                self._handle_task_result(task, config)
+            
+        except KeyboardInterrupt:
+            if not config.quiet and not config.json_output:
+                sys.stdout.write('\n')
+            self.stdout.write('Ожидание прервано пользователем')
+            logger.warning('Ожидание задачи прервано пользователем')
 
     def _print_header(self, quiet: bool):
         """Выводит заголовок команды."""
@@ -636,56 +655,112 @@ class Command(BaseCommand):
         self.stdout.write(TEXT['header'])
         self.stdout.write(TEXT['line_sep'])
 
-    def _print_result(self, result, config: ParsingConfig):
+    def _print_result(self, result: Dict[str, Any], config: ParsingConfig):
         """Вывод результатов парсинга."""
+        if not isinstance(result, dict):
+            logger.warning(f'Неожиданный формат результата: {type(result)}')
+            if not config.quiet:
+                self.stdout.write(f'Результат: {result}')
+            elif config.json_output:
+                self.stdout.write(json.dumps({'result': str(result)}, ensure_ascii=False))
+            return
+
+        # Обработка ошибок
+        if result.get('error'):
+            error_msg = result['error']
+            logger.error(f'Ошибка в результате парсинга: {error_msg}')
+            if not config.quiet:
+                self.stdout.write(self.style.ERROR(f'Ошибка: {error_msg}'))  # type: ignore[attr-defined]
+            elif config.json_output:
+                self.stdout.write(json.dumps({'error': error_msg}, ensure_ascii=False))
+            return
+
+        # JSON вывод
         if config.json_output:
             self.stdout.write(json.dumps(result, ensure_ascii=False, indent=None if config.quiet else 2))
             return
 
+        # Quiet режим - минимальный вывод
         if config.quiet:
-            if result.get('error'):
-                self.stdout.write(result.get('error', 'error'))
-            else:
-                self.stdout.write(f"status={result.get('status', 'completed')}, total_vacancies={result.get('total_vacancies', 0)}")
+            total = result.get('total_vacancies', 0)
+            new = result.get('new_vacancies', 0)
+            updated = result.get('updated_vacancies', 0)
+            self.stdout.write(f'{total} обработано, {new} новых, {updated} обновлено')
             return
 
-        if result.get('error'):
-            self.stdout.write(f'Ошибка: {result["error"]}')
-            return
-
-        self.stdout.write('\n=== РЕЗУЛЬТАТЫ ПАРСИНГА ===')
+        # Полный вывод с форматированием
+        self.stdout.write('')
+        self.stdout.write(TEXT['line_sep'])
+        self.stdout.write(f'=== РЕЗУЛЬТАТЫ ПАРСИНГА ===')
+        self.stdout.write(TEXT['line_sep'])
+        self.stdout.write('')
 
         mode = result.get('mode', 'unknown')
-
+        execution_time = result.get('execution_time_seconds', 0)
+        
+        # Информация о ролях
         if mode in ['by_professional_roles', 'by_professional_roles_parallel']:
+            total_roles = result.get('total_roles', 0)
+            parsed_roles = result.get('parsed_roles', 0)
+            
             if mode == 'by_professional_roles_parallel':
                 status = result.get('status', 'unknown')
                 if status == 'parallel_tasks_dispatched':
-                    self.stdout.write('Параллельные задачи запущены!')
-                    self.stdout.write(f"Всего ролей для обработки: {result.get('total_roles', 0)}")
-                    self.stdout.write(f"Количество воркеров: {result.get('parallel_workers', 0)}")
-                    self.stdout.write(f"ID группы задач: {result.get('group_task_id', 'N/A')}")
+                    self.stdout.write(self.style.SUCCESS('Параллельные задачи запущены'))  # type: ignore[attr-defined]
+                    self.stdout.write(f'Всего ролей для обработки: {self.style.SUCCESS(str(total_roles))}')  # type: ignore[attr-defined]
+                    self.stdout.write(f'Количество воркеров: {self.style.SUCCESS(str(result.get("parallel_workers", 0)))}')  # type: ignore[attr-defined]
+                    self.stdout.write(f'Main Task ID: {self.style.SUCCESS(str(result.get("group_task_id", "N/A")))}')  # type: ignore[attr-defined]
                     self.stdout.write('')
-                    self.stdout.write('Для получения результатов проверьте статус задач через Flower')
-                    self.stdout.write('или дождитесь завершения всех подзадач.')
+                    self.stdout.write(TEXT['monitor_tasks'])
                     return
                 else:
-                    self.stdout.write(f"Всего IT ролей: {result.get('total_roles', 0)}")
+                    self.stdout.write(self.style.SUCCESS(f'Всего IT ролей: {total_roles}'))  # type: ignore[attr-defined]
+                    if parsed_roles:
+                        self.stdout.write(self.style.SUCCESS(f'Обработано ролей: {parsed_roles}'))  # type: ignore[attr-defined]
             else:
-                self.stdout.write(f"Всего IT ролей: {result.get('total_roles', 0)}")
-                self.stdout.write(f"Обработано ролей: {result.get('parsed_roles', 0)}")
+                self.stdout.write(self.style.SUCCESS(f'Всего IT ролей: {total_roles}'))  # type: ignore[attr-defined]
+                if parsed_roles:
+                    self.stdout.write(self.style.SUCCESS(f'Обработано ролей: {parsed_roles}'))  # type: ignore[attr-defined]
 
+        # Статистика по вакансиям
         self.stdout.write('')
-        self.stdout.write(f"Всего обработано вакансий: {result.get('total_vacancies', 0)}")
-        self.stdout.write(f"Новых вакансий: {result.get('new_vacancies', 0)}")
-        self.stdout.write(f"Обновлено вакансий: {result.get('updated_vacancies', 0)}")
-        self.stdout.write(f"Всего в базе данных: {result.get('total_in_db', 0)}")
+        self.stdout.write('Статистика по вакансиям:')
+        total_vacancies = result.get('total_vacancies', 0)
+        new_vacancies = result.get('new_vacancies', 0)
+        updated_vacancies = result.get('updated_vacancies', 0)
+        total_in_db = result.get('total_in_db', 0)
 
+        self.stdout.write(f'   Всего обработано: {self.style.SUCCESS(str(total_vacancies))}')  # type: ignore[attr-defined]
+        if new_vacancies > 0:
+            self.stdout.write(f'   Новых вакансий: {self.style.SUCCESS(str(new_vacancies))}')  # type: ignore[attr-defined]
+        if updated_vacancies > 0:
+            self.stdout.write(f'   Обновлено вакансий: {self.style.SUCCESS(str(updated_vacancies))}')  # type: ignore[attr-defined]
+        self.stdout.write(f'   Всего в базе данных: {self.style.SUCCESS(str(total_in_db))}')  # type: ignore[attr-defined]
+
+        # Метрики выполнения
         if result.get('metrics'):
             metrics = result['metrics']
             self.stdout.write('')
             self.stdout.write('Метрики выполнения:')
-            self.stdout.write(f"  Запросов: {metrics.get('requests_total', 0)}")
-            self.stdout.write(f"  Успешных: {metrics.get('requests_success', 0)}")
-            self.stdout.write(f"  Ошибок: {metrics.get('requests_error', 0)}")
-            self.stdout.write(f"  Rate limit: {metrics.get('rate_limits', 0)}")
+            self.stdout.write(f'   Запросов: {self.style.SUCCESS(str(metrics.get("requests_total", 0)))}')  # type: ignore[attr-defined]
+            self.stdout.write(f'   Успешных: {self.style.SUCCESS(str(metrics.get("requests_success", 0)))}')  # type: ignore[attr-defined]
+            errors = metrics.get('requests_error', 0)
+            if errors > 0:
+                self.stdout.write(f'   Ошибок: {self.style.ERROR(str(errors))}')  # type: ignore[attr-defined]
+            rate_limits = metrics.get('rate_limits', 0) or metrics.get('rate_limits_hit', 0)
+            if rate_limits > 0:
+                self.stdout.write(f'   Rate limit: {self.style.WARNING(str(rate_limits))}')  # type: ignore[attr-defined]
+
+        # Время выполнения
+        if execution_time > 0:
+            minutes = int(execution_time // 60)
+            seconds = int(execution_time % 60)
+            if minutes > 0:
+                time_str = f'{minutes} мин {seconds} сек'
+            else:
+                time_str = f'{seconds} сек'
+            self.stdout.write('')
+            self.stdout.write(f'Время выполнения: {self.style.SUCCESS(time_str)}')  # type: ignore[attr-defined]
+        
+        self.stdout.write('')
+        self.stdout.write(TEXT['line_sep'])
