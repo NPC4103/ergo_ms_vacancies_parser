@@ -14,7 +14,7 @@ import json
 import csv
 import logging
 from pathlib import Path
-from typing import Optional
+from typing import Any, Dict, List
 
 from django.core.management.base import BaseCommand, CommandParser
 
@@ -60,7 +60,7 @@ class Command(BaseCommand):
             help='Форматировать JSON с отступами (только для формата json)'
         )
 
-    def handle(self, *args, **options) -> None:
+    def handle(self, *args: tuple, **options: Dict[str, Any]) -> None:
         """
         Выполняет команду получения профессиональных ролей.
 
@@ -68,34 +68,46 @@ class Command(BaseCommand):
             *args: Позиционные аргументы
             **options: Именованные аргументы
         """
-        self.stdout.write(self.style.SUCCESS('Начинаем получение профессиональных ролей...'))
+        logger.info('Запуск команды получения профессиональных ролей')
+        self.stdout.write(self.style.SUCCESS('Начинаем получение профессиональных ролей...'))  # type: ignore[attr-defined]
 
         try:
             # Выполняем задачу Celery синхронно
+            logger.debug('Выполнение задачи get_professional_roles_task')
             result = get_professional_roles_task()
 
             if not result.get('success', False):
                 error_msg = result.get('error', 'Неизвестная ошибка')
-                self.stderr.write(self.style.ERROR(f'Ошибка при получении ролей: {error_msg}'))
+                logger.error(f'Ошибка при получении ролей: {error_msg}')
+                self.stderr.write(self.style.ERROR(f'Ошибка при получении ролей: {error_msg}'))  # type: ignore[attr-defined]
                 return
 
-            roles = result.get('roles', [])
+            roles: List[Dict[str, Any]] = result.get('roles', [])
             categories_count = result.get('categories_count', 0)
             total_roles = result.get('total_roles', 0)
 
+            logger.info(f'Получено {total_roles} ролей из {categories_count} категорий')
+
             # Выводим статистику
-            self.stdout.write(self.style.SUCCESS(
+            self.stdout.write(self.style.SUCCESS(  # type: ignore[attr-defined]
                 f'Успешно получено {total_roles} профессиональных ролей из {categories_count} категорий'
             ))
 
             # Сохраняем в файл если указан путь
             output_file = options.get('output_file')
             if output_file:
-                self._save_to_file(roles, output_file, options.get('format'), options.get('pretty'))
-
-                self.stdout.write(self.style.SUCCESS(
-                    f'Результаты сохранены в файл: {output_file}'
-                ))
+                format_type: str = str(options.get('format', 'json'))
+                pretty: bool = bool(options.get('pretty', False))
+                try:
+                    self._save_to_file(roles, str(output_file), format_type, pretty)
+                    logger.info(f'Результаты сохранены в файл: {output_file}')
+                    self.stdout.write(self.style.SUCCESS(  # type: ignore[attr-defined]
+                        f'Результаты сохранены в файл: {output_file}'
+                    ))
+                except (IOError, OSError) as e:
+                    error_msg = f'Ошибка при сохранении файла: {str(e)}'
+                    logger.error(error_msg, exc_info=True)
+                    self.stderr.write(self.style.ERROR(error_msg))  # type: ignore[attr-defined]
             else:
                 # Выводим первые несколько ролей в консоль
                 self._print_sample_roles(roles)
@@ -103,18 +115,33 @@ class Command(BaseCommand):
         except Exception as e:
             error_msg = f'Неожиданная ошибка: {str(e)}'
             logger.error(error_msg, exc_info=True)
-            self.stderr.write(self.style.ERROR(error_msg))
+            self.stderr.write(self.style.ERROR(error_msg))  # type: ignore[attr-defined]
 
-    def _save_to_file(self, roles: list, file_path: str, format_type: str, pretty: bool) -> None:
+    def _save_to_file(
+        self,
+        roles: List[Dict[str, Any]],
+        file_path: str,
+        format_type: str,
+        pretty: bool
+    ) -> None:
         """
         Сохраняет роли в файл.
 
         Args:
-            roles: Список ролей
+            roles: Список ролей (словари)
             file_path: Путь к файлу
             format_type: Формат файла ('json' или 'csv')
             pretty: Форматировать JSON с отступами
+
+        Raises:
+            IOError: При ошибках записи файла
+            OSError: При ошибках создания директории
+            ValueError: При неверном формате файла
         """
+        if not roles:
+            logger.warning('Список ролей пуст, файл не будет создан')
+            return
+
         # Если путь относительный, сохраняем в директорию config модуля
         if not Path(file_path).is_absolute():
             config_dir = Path(__file__).parent.parent.parent / 'config'
@@ -122,31 +149,53 @@ class Command(BaseCommand):
         else:
             path = Path(file_path)
 
-        path.parent.mkdir(parents=True, exist_ok=True)
+        # Создаем директорию если её нет
+        try:
+            path.parent.mkdir(parents=True, exist_ok=True)
+        except OSError as e:
+            logger.error(f'Ошибка при создании директории {path.parent}: {e}')
+            raise
+
+        # Валидация формата
+        if format_type not in ['json', 'csv']:
+            raise ValueError(f'Неподдерживаемый формат: {format_type}')
+
+        logger.debug(f'Сохранение {len(roles)} ролей в файл {path} (формат: {format_type})')
 
         if format_type == 'json':
             indent = 2 if pretty else None
-            with open(path, 'w', encoding='utf-8') as f:
-                json.dump(roles, f, ensure_ascii=False, indent=indent)
+            try:
+                with open(path, 'w', encoding='utf-8') as f:
+                    json.dump(roles, f, ensure_ascii=False, indent=indent)
+                logger.info(f'Успешно сохранено {len(roles)} ролей в JSON файл: {path}')
+            except (IOError, OSError) as e:
+                logger.error(f'Ошибка при записи JSON файла {path}: {e}')
+                raise
 
         elif format_type == 'csv':
+            # Определяем поля из первой роли
             if not roles:
+                logger.warning('Список ролей пуст, CSV файл не будет создан')
                 return
 
-            # Определяем поля из первой роли
-            fieldnames = roles[0].keys() if roles else []
+            fieldnames = list(roles[0].keys()) if roles else []
 
-            with open(path, 'w', encoding='utf-8', newline='') as f:
-                writer = csv.DictWriter(f, fieldnames=fieldnames)
-                writer.writeheader()
-                writer.writerows(roles)
+            try:
+                with open(path, 'w', encoding='utf-8', newline='') as f:
+                    writer = csv.DictWriter(f, fieldnames=fieldnames)
+                    writer.writeheader()
+                    writer.writerows(roles)
+                logger.info(f'Успешно сохранено {len(roles)} ролей в CSV файл: {path}')
+            except (IOError, OSError) as e:
+                logger.error(f'Ошибка при записи CSV файла {path}: {e}')
+                raise
 
-    def _print_sample_roles(self, roles: list, limit: int = 10) -> None:
+    def _print_sample_roles(self, roles: List[Dict[str, Any]], limit: int = 50) -> None:
         """
         Выводит пример ролей в консоль.
 
         Args:
-            roles: Список ролей
+            roles: Список ролей (словари)
             limit: Максимальное количество для вывода
         """
         if not roles:
@@ -163,4 +212,4 @@ class Command(BaseCommand):
 
         if len(roles) > limit:
             self.stdout.write(f'... и ещё {len(roles) - limit} ролей')
-            self.stdout.write(f'\nВсего ролей: {len(roles)}')
+        self.stdout.write(f'\nВсего ролей: {len(roles)}')

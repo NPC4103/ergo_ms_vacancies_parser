@@ -101,6 +101,28 @@ class Vacancy(models.Model):
         
         return salary_str
     
+    def _normalize_json_field_value(self, value):
+        """Нормализует значение JSON поля (список) для строкового представления"""
+        if not value:
+            return ''
+        
+        if not isinstance(value, list):
+            return str(value) if value is not None else ''
+        
+        normalized_items = []
+        for item in value:
+            if isinstance(item, str):
+                normalized_items.append(item)
+            elif isinstance(item, dict):
+                # Извлекаем значение из словаря (обычно 'name' для навыков)
+                name = item.get('name') or item.get('value') or str(item)
+                if name:
+                    normalized_items.append(str(name))
+            else:
+                normalized_items.append(str(item))
+        
+        return ', '.join(normalized_items)
+    
     def create_version(self, new_data=None):
         """Создает новую версию вакансии с текущими данными"""
         self.current_version += 1
@@ -121,8 +143,8 @@ class Vacancy(models.Model):
                     
                     # Специальная обработка для JSON полей
                     if field in ['key_skills', 'skills']:
-                        old_value_str = ', '.join(old_value) if old_value else ''
-                        new_value_str = ', '.join(new_value) if new_value else ''
+                        old_value_str = self._normalize_json_field_value(old_value)
+                        new_value_str = self._normalize_json_field_value(new_value)
                     else:
                         old_value_str = str(old_value) if old_value is not None else ''
                         new_value_str = str(new_value) if new_value is not None else ''
