@@ -1,0 +1,28 @@
+{
+  "menuSections": [
+    {
+      "icon": "Briefcase",
+      "routeName": "VacanciesParser",
+      "title": "Парсер вакансий",
+      "list": [
+        {
+          "routeName": "VacanciesDashboard",
+          "name": "Панель управления"
+        },
+        {
+          "routeName": "VacanciesList",
+          "name": "Список вакансий"
+        },
+        {
+          "routeName": "ParsingControl",
+          "name": "Управление парсингом"
+        },
+        {
+          "routeName": "VacancyStats",
+          "name": "Статистика"
+        }
+      ]
+    }
+  ]
+}
+
