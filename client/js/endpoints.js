@@ -1,17 +1,40 @@
+/**
+ * API endpoints для модуля vacancies_parser
+ */
+
 export const endpoints = {
-  vacancies: {
-    list: 'vacancies_parser/headhunter/vacancies/',
-    detail: id => `vacancies_parser/headhunter/vacancies/${id}/`,
-    stats: 'vacancies_parser/headhunter/vacancies/stats/',
-    versions: id => `vacancies_parser/headhunter/vacancies/${id}/versions/`,
-    versionDetail: id => `vacancies_parser/headhunter/vacancies/${id}/version_detail/`,
-    changes: id => `vacancies_parser/headhunter/vacancies/${id}/changes/`,
-    parseSingle: 'vacancies_parser/headhunter/vacancies/parse_single/',
-    taskStatus: 'vacancies_parser/headhunter/vacancies/task_status/'
+  // Задачи парсинга
+  tasks: {
+    list: 'vacancies_parser/tasks/',
+    detail: id => `vacancies_parser/tasks/${id}/`,
+    create: 'vacancies_parser/tasks/',
+    update: id => `vacancies_parser/tasks/${id}/`,
+    delete: id => `vacancies_parser/tasks/${id}/`,
+    progress: id => `vacancies_parser/tasks/${id}/progress/`,
+    pause: id => `vacancies_parser/tasks/${id}/pause/`,
+    resume: id => `vacancies_parser/tasks/${id}/resume/`,
+    stop: id => `vacancies_parser/tasks/${id}/stop/`,
+    items: id => `vacancies_parser/tasks/${id}/items/`,
+    statistics: id => `vacancies_parser/tasks/${id}/statistics/`,
+    sources: 'vacancies_parser/tasks/sources/'
   },
-  parsing: {
-    parseByRoles: 'vacancies_parser/headhunter/parsing/parse_by_roles/',
-    parseByTechnologies: 'vacancies_parser/headhunter/parsing/parse_by_technologies/'
+  
+  // Элементы задач
+  items: {
+    list: 'vacancies_parser/items/',
+    detail: id => `vacancies_parser/items/${id}/`
+  },
+  
+  // Вакансии
+  vacancies: {
+    list: 'vacancies_parser/vacancies/',
+    detail: id => `vacancies_parser/vacancies/${id}/`,
+    changes: id => `vacancies_parser/vacancies/${id}/changes/`
+  },
+  
+  // Статистика
+  statistics: {
+    list: 'vacancies_parser/statistics/',
+    detail: id => `vacancies_parser/statistics/${id}/`
   }
 }
-

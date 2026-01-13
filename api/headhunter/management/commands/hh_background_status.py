@@ -3,13 +3,16 @@
 """
 
 import json
-import os
+from pathlib import Path
 from typing import Any, Dict, Optional
 
 from django.core.management.base import BaseCommand
 from django.utils import timezone
 
 from modules.vacancies_parser.api.headhunter.celery_beat_config import HeadhunterCeleryBeatConfig
+
+# Путь к конфигурационному файлу фонового парсинга
+BACKGROUND_PARSING_CONFIG = Path(__file__).parent.parent.parent / 'config' / 'background_parsing.json'
 
 
 TEXT: Dict[str, str] = {
@@ -246,19 +249,22 @@ class Command(BaseCommand):
                 self.stdout.write(f'   - {key}: {value}')
 
     def _load_json_config(self) -> Optional[Dict[str, Any]]:
-        """Загрузка JSON конфигурации фонового парсинга."""
-        config_path = os.path.join(
-            os.path.dirname(os.path.dirname(__file__)),
-            'config',
-            'background_parsing.json'
-        )
-
-        if not os.path.exists(config_path):
+        """
+        Загрузка JSON конфигурации фонового парсинга.
+        
+        Returns:
+            Словарь с конфигурацией или None, если файл не найден или произошла ошибка
+        """
+        if not BACKGROUND_PARSING_CONFIG.exists():
             return None
 
         try:
-            with open(config_path, 'r', encoding='utf-8') as f:
+            with open(BACKGROUND_PARSING_CONFIG, 'r', encoding='utf-8') as f:
                 return json.load(f)
+        except json.JSONDecodeError:
+            # Логируем ошибку парсинга JSON, но не прерываем выполнение команды
+            return None
         except Exception:
+            # Другие ошибки (IOError, PermissionError и т.д.)
             return None
 
