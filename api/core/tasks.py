@@ -15,6 +15,15 @@ from .models import ParsingTask, TaskItem
 from .normalized_models import NormalizedVacancy
 from .scheduler import default_scheduler
 from .parsers import ParserFactory
+from .tasks import (
+    validate_orchestration_params,
+    validate_worker_params,
+    claim_items_for_worker,
+    process_item,
+    handle_item_error,
+    get_error_handler_for_task,
+    get_metrics_for_task,
+)
 
 logger = logging.getLogger('celery.module.vacancies_parser.tasks')
 
@@ -53,6 +62,20 @@ def create_parsing_task(
     Raises:
         Exception: При ошибках создания задачи или discovery
     """
+    task_id = self.request.id
+    metrics = get_metrics_for_task(self.name)
+    error_handler = get_error_handler_for_task(self.name)
+    
+    # Валидация параметров
+    try:
+        validate_orchestration_params(source=source, parsing_mode=parsing_mode, config=config)
+    except ValueError as e:
+        logger.error(f"Ошибка валидации параметров задачи {task_id}: {e}")
+        raise
+    
+    # Запись начала задачи
+    metrics.record_task_start(task_id, task_name=self.name, source=source, parsing_mode=parsing_mode)
+    
     try:
         logger.info(f"Создание задачи парсинга: {source}/{parsing_mode}")
         
@@ -99,7 +122,6 @@ def create_parsing_task(
                 task_items.append(task_item)
             
             # Bulk create для производительности с оптимизацией batch_size
-            # Используем batch_size=500 для оптимальной производительности
             BATCH_SIZE = 500
             created_count = 0
             for i in range(0, len(task_items), BATCH_SIZE):
@@ -121,10 +143,12 @@ def create_parsing_task(
             # Запуск координатора парсинга
             coordinate_parsing_task.apply_async(
                 args=[task.id],
-                countdown=2  # Небольшая задержка для стабильности
+                countdown=2
             )
             
-            return task.id
+            result = task.id
+            metrics.record_task_success(task_id, result, task_id=task.id)
+            return result
             
         except Exception as e:
             logger.error(f"Ошибка при discovery для задачи {task.id}: {e}")
@@ -132,10 +156,15 @@ def create_parsing_task(
             task.status = 'failed'
             task.error_message = f"Ошибка при discovery: {str(e)}"
             task.save(update_fields=['status', 'error_message', 'updated_at'])
+            
+            # Обработка ошибки
+            error_handler.handle_error(e, {'task_id': task.id, 'phase': 'discovery'})
             raise
     
     except Exception as e:
         logger.error(f"Ошибка при создании задачи парсинга: {e}")
+        metrics.record_task_failure(task_id, e)
+        error_handler.handle_error(e, {'task_id': task_id})
         raise
 
 
@@ -245,11 +274,26 @@ def parse_items_worker(self, task_id: int, worker_id: str):
         task_id: ID ParsingTask
         worker_id: ID worker'а для идентификации
     """
+    celery_task_id = self.request.id
+    metrics = get_metrics_for_task(self.name)
+    error_handler = get_error_handler_for_task(self.name)
+    
+    # Валидация параметров
+    try:
+        validate_worker_params(task_id=task_id, worker_id=worker_id)
+    except ValueError as e:
+        logger.error(f"Ошибка валидации параметров worker задачи {celery_task_id}: {e}")
+        raise
+    
+    # Запись начала задачи
+    metrics.record_task_start(celery_task_id, task_name=self.name, task_id=task_id, worker_id=worker_id)
+    
     try:
         task = ParsingTask.objects.get(id=task_id)
         
         if task.status != 'running':
             logger.info(f"Worker {worker_id}: задача {task_id} не в статусе 'running', завершение")
+            metrics.record_task_success(celery_task_id, {'status': 'skipped'}, task_id=task_id)
             return
         
         logger.info(f"Worker {worker_id} запущен для задачи {task_id}")
@@ -274,48 +318,22 @@ def parse_items_worker(self, task_id: int, worker_id: str):
                 logger.info(f"Worker {worker_id}: задача {task_id} больше не running, завершение")
                 break
             
-            # Claiming items
-            items = default_scheduler.claim_items_for_worker(
-                task_id=task_id,
-                worker_id=worker_id,
-                limit=10  # Батч 10 items
-            )
+            # Claiming items через утилиту
+            items = claim_items_for_worker(task_id=task_id, worker_id=worker_id, limit=10)
             
             if not items:
-                # Нет доступных items
                 logger.info(f"Worker {worker_id}: нет доступных items для задачи {task_id}")
                 break
             
             # Обработка каждого item
             for item in items:
                 try:
-                    # Парсинг item
-                    vacancy_data = parser.parse_item(item.source_item_id, item.url)
-                    
-                    # Удаляем поля lookup из defaults чтобы избежать конфликта
-                    defaults_data = {k: v for k, v in vacancy_data.items() 
-                                    if k not in ('source', 'source_id')}
-                    defaults_data['task_item'] = item
-                    
-                    # Сохранение в NormalizedVacancy
-                    vacancy, created = NormalizedVacancy.objects.update_or_create(
-                        source=task.source,
-                        source_id=item.source_item_id,
-                        defaults=defaults_data
-                    )
-                    
-                    # Отметка item как completed
-                    item.mark_completed(
-                        result_vacancy_id=vacancy.id,
-                        extracted_data=vacancy_data
-                    )
-                    
-                    # Обновление счетчика задачи
-                    task.increment_completed()
-                    
+                    # Обработка item через утилиту
+                    result = process_item(item, parser, task, error_handler)
                     processed_count += 1
+                    metrics.record_item_processed(celery_task_id, success=True)
                     
-                    logger.info(f"Worker {worker_id}: успешно обработан item {item.id} (vacancy_id={vacancy.id}, created={created})")
+                    logger.info(f"Worker {worker_id}: успешно обработан item {item.id} (vacancy_id={result['vacancy_id']}, created={result['created']})")
                     
                 except Exception as e:
                     logger.error(
@@ -323,39 +341,29 @@ def parse_items_worker(self, task_id: int, worker_id: str):
                         exc_info=True
                     )
                     
-                    # Определение типа ошибки
-                    from .parsers.base import BlockedError, NetworkError, ValidationError
-                    
-                    if isinstance(e, BlockedError):
-                        error_type = 'blocked'
-                        item.mark_blocked(str(e))
-                    elif isinstance(e, NetworkError):
-                        error_type = 'network'
-                        item.mark_failed(str(e), error_type)
-                    elif isinstance(e, ValidationError):
-                        error_type = 'validation'
-                        item.mark_failed(str(e), error_type)
-                    else:
-                        error_type = 'unknown'
-                        item.mark_failed(str(e), error_type)
-                    
-                    # Обновление счетчика failed
-                    task.increment_failed()
+                    # Обработка ошибки через утилиту
+                    handle_item_error(item, e, task, error_handler)
+                    metrics.record_item_processed(celery_task_id, success=False)
                 
                 # Задержка между items (если указано в config)
                 import time
                 delay = task.config.get('delay', 0.5)
                 time.sleep(delay)
         
-        logger.info(
-            f"Worker {worker_id} завершен для задачи {task_id}: "
-            f"обработано {processed_count} items"
-        )
+        result = {'processed_count': processed_count, 'task_id': task_id}
+        logger.info(f"Worker {worker_id} завершен для задачи {task_id}: обработано {processed_count} items")
+        metrics.record_task_success(celery_task_id, result, task_id=task_id, processed_count=processed_count)
         
     except ParsingTask.DoesNotExist:
-        logger.error(f"Worker {worker_id}: задача {task_id} не найдена")
+        error_msg = f"Задача {task_id} не найдена"
+        logger.error(f"Worker {worker_id}: {error_msg}")
+        metrics.record_task_failure(celery_task_id, Exception(error_msg), task_id=task_id)
+        raise
     except Exception as e:
         logger.error(f"Worker {worker_id}: критическая ошибка для задачи {task_id}: {e}")
+        metrics.record_task_failure(celery_task_id, e, task_id=task_id)
+        error_handler.handle_error(e, {'task_id': task_id, 'worker_id': worker_id})
+        raise
 
 
 # ============================================================
@@ -369,16 +377,27 @@ def release_expired_leases():
     
     Запускается каждые 5 минут через Celery Beat.
     """
+    from celery import current_task
+    task_id = current_task.request.id if current_task else 'unknown'
+    metrics = get_metrics_for_task('vacancies_parser.tasks.release_expired_leases')
+    error_handler = get_error_handler_for_task('vacancies_parser.tasks.release_expired_leases')
+    
+    metrics.record_task_start(task_id, task_name='release_expired_leases')
+    
     try:
         released_count = default_scheduler.release_expired_leases()
         
         if released_count > 0:
             logger.warning(f"Освобождено {released_count} expired leases")
         
+        result = {'released_count': released_count}
+        metrics.record_task_success(task_id, result, released_count=released_count)
         return released_count
         
     except Exception as e:
         logger.error(f"Ошибка при освобождении expired leases: {e}")
+        metrics.record_task_failure(task_id, e)
+        error_handler.handle_error(e, {'task_id': task_id})
         return 0
 
 
@@ -389,6 +408,13 @@ def monitor_tasks_progress():
     
     Запускается каждые 10 минут через Celery Beat.
     """
+    from celery import current_task
+    task_id = current_task.request.id if current_task else 'unknown'
+    metrics = get_metrics_for_task('vacancies_parser.tasks.monitor_tasks_progress')
+    error_handler = get_error_handler_for_task('vacancies_parser.tasks.monitor_tasks_progress')
+    
+    metrics.record_task_start(task_id, task_name='monitor_tasks_progress')
+    
     try:
         running_tasks = ParsingTask.objects.filter(status='running')
         
@@ -407,10 +433,14 @@ def monitor_tasks_progress():
                 logger.info(f"Task {task.id} обнаружен как завершенный, запуск финализации")
                 finalize_parsing_task.apply_async(args=[task.id])
         
+        result = {'monitored_tasks': len(running_tasks)}
+        metrics.record_task_success(task_id, result, monitored_tasks=len(running_tasks))
         return len(running_tasks)
         
     except Exception as e:
         logger.error(f"Ошибка при мониторинге задач: {e}")
+        metrics.record_task_failure(task_id, e)
+        error_handler.handle_error(e, {'task_id': task_id})
         return 0
 
 

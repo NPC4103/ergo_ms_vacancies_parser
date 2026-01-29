@@ -8,10 +8,10 @@ Celery конфигурация для модуля vacancies_parser.
 """
 
 from kombu import Queue, Exchange
-from src.core.utils.celery import CeleryModuleConfig
+from .core.celery_config_base import VacanciesParserCeleryConfigBase
 
 
-class VacanciesParserCeleryConfig(CeleryModuleConfig):
+class VacanciesParserCeleryConfig(VacanciesParserCeleryConfigBase):
     """Конфигурация Celery для модуля vacancies_parser"""
     
     def __init__(self, module_name: str):
@@ -47,7 +47,15 @@ class VacanciesParserCeleryConfig(CeleryModuleConfig):
         
         Настройки оптимизированы для парсинга ~40k items/hour с параллелизмом ~10.
         """
-        return {
+        # Получаем базовые аннотации
+        annotations = super().get_task_annotations()
+        
+        # Получаем таймауты по умолчанию
+        default_limits = self.get_default_time_limits()
+        default_rates = self.get_default_rate_limits()
+        
+        # Добавляем специфичные аннотации
+        annotations.update({
             # Координирующие задачи
             'vacancies_parser.tasks.create_parsing_task': {
                 'time_limit': 600,  # 10 минут (discovery может быть долгим)
@@ -55,34 +63,29 @@ class VacanciesParserCeleryConfig(CeleryModuleConfig):
                 'rate_limit': '10/m',  # Лимит создания задач
             },
             'vacancies_parser.tasks.coordinate_parsing_task': {
-                'time_limit': 7200,  # 2 часа (координация может быть долгой)
-                'soft_time_limit': 7000,
+                **default_limits['orchestration'],
                 'rate_limit': None,  # Без лимита для координаторов
             },
-            'vacancies_parser.task.finalize_parsing_task': {
-                'time_limit': 300,  # 5 минут
-                'soft_time_limit': 270,
+            'vacancies_parser.tasks.finalize_parsing_task': {
+                **default_limits['periodic'],
                 'rate_limit': None,
             },
             
             # Worker задачи
             'vacancies_parser.tasks.parse_items_worker': {
-                'time_limit': 3600,  # 1 час (worker может обрабатывать много items)
-                'soft_time_limit': 3540,
+                **default_limits['worker'],
                 'rate_limit': None,  # Без лимита для workers
                 'max_retries': 0,  # Workers не делают retry
             },
             
             # Периодические задачи
             'vacancies_parser.tasks.release_expired_leases': {
-                'time_limit': 120,  # 2 минуты
-                'soft_time_limit': 110,
-                'rate_limit': '1/m',  # Раз в минуту максимум
+                **default_limits['periodic'],
+                'rate_limit': default_rates['periodic'],
             },
             'vacancies_parser.tasks.monitor_tasks_progress': {
-                'time_limit': 300,  # 5 минут
-                'soft_time_limit': 270,
-                'rate_limit': '1/m',
+                **default_limits['periodic'],
+                'rate_limit': default_rates['periodic'],
             },
             
             # Управляющие задачи
@@ -98,7 +101,9 @@ class VacanciesParserCeleryConfig(CeleryModuleConfig):
                 'time_limit': 120,
                 'soft_time_limit': 110,
             },
-        }
+        })
+        
+        return annotations
 
 
 # Экземпляр конфигурации (автоматически обнаруживается системой)

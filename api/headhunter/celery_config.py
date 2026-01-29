@@ -5,9 +5,9 @@
 
 from typing import Dict, Any
 
-from src.core.utils.celery.base import CeleryModuleConfig
+from ..core.celery_config_base import VacanciesParserCeleryConfigBase
 
-class HeadhunterCeleryConfig(CeleryModuleConfig):
+class HeadhunterCeleryConfig(VacanciesParserCeleryConfigBase):
     """
     Конфигурация Celery для модуля парсинга HeadHunter.
     """

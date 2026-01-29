@@ -11,6 +11,7 @@ from celery import shared_task
 from django.apps import apps as django_apps
 from django.utils import timezone
 
+from ...core.tasks import get_error_handler_for_task, get_metrics_for_task
 from ..scripts import parse_vacancies_by_text, parse_all_vacancies, HeadHunterParser
 from ..models import Vacancy
 
@@ -77,6 +78,12 @@ def parse_hh_vacancies_task(
     Celery-задача для парсинга вакансий с HeadHunter.
     Возвращает статистику по результатам парсинга.
     """
+    task_id = self.request.id
+    error_handler = get_error_handler_for_task(self.name)
+    metrics = get_metrics_for_task(self.name)
+    
+    metrics.record_task_start(task_id, task_name=self.name, universal=universal)
+    
     logger.info(
         "Запуск задачи parse_hh_vacancies_task: text_list=%s, universal=%s",
         text_list,
@@ -86,6 +93,7 @@ def parse_hh_vacancies_task(
     if not universal and not text_list:
         error_msg = 'Необходимо указать text_list или universal=True'
         logger.error(error_msg)
+        metrics.record_task_failure(task_id, ValueError(error_msg))
         return {'error': error_msg}
     
     try:
@@ -98,7 +106,7 @@ def parse_hh_vacancies_task(
                 areas_only=areas_only
             )
             logger.info("Универсальный парсинг завершен")
-            return {
+            result_data = {
                 'mode': 'universal',
                 'areas_processed': result.get('areas_processed'),
                 'roles_processed': result.get('roles_processed'),
@@ -108,6 +116,8 @@ def parse_hh_vacancies_task(
                 'updated_vacancies': result.get('updated_vacancies'),
                 'total_in_db': result.get('total_in_db'),
             }
+            metrics.record_task_success(task_id, result_data)
+            return result_data
         
         assert text_list is not None
         queries = list(text_list)
@@ -122,16 +132,26 @@ def parse_hh_vacancies_task(
             date_to=date_to
         )
         logger.info("Парсинг по тексту завершен")
-        return {
+        result_data = {
             'mode': 'by_text',
             'total_vacancies': result.get('total_vacancies'),
             'new_vacancies': result.get('new_vacancies'),
             'updated_vacancies': result.get('updated_vacancies'),
             'total_in_db': result.get('total_in_db'),
         }
+        metrics.record_task_success(task_id, result_data)
+        return result_data
     except Exception as exc:
         logger.error('Ошибка выполнения parse_hh_vacancies_task', exc_info=True)
-        raise self.retry(exc=exc)
+        metrics.record_task_failure(task_id, exc)
+        error_handler.handle_error(exc, {'task_id': task_id})
+        
+        # Проверка необходимости retry
+        retries = self.request.retries
+        if error_handler.should_retry(exc, retries, self.max_retries):
+            delay = error_handler.get_retry_delay(exc, retries, base_delay=self.default_retry_delay)
+            raise self.retry(exc=exc, countdown=delay)
+        raise
 
 
 @shared_task(
@@ -146,6 +166,12 @@ def parse_single_vacancy_task(self, vacancy_id, force_update=False):
     Celery-задача для парсинга одной вакансии по ID.
     Возвращает результат сохранения/обновления.
     """
+    task_id = self.request.id
+    error_handler = get_error_handler_for_task(self.name)
+    metrics = get_metrics_for_task(self.name)
+    
+    metrics.record_task_start(task_id, task_name=self.name, vacancy_id=vacancy_id)
+    
     logger.info(f"Запуск задачи parse_single_vacancy_task для вакансии {vacancy_id}, force_update={force_update}")
     
     try:
@@ -155,19 +181,25 @@ def parse_single_vacancy_task(self, vacancy_id, force_update=False):
         if existing_vacancy and not force_update:
             msg = f'Вакансия {vacancy_id} уже есть в базе'
             logger.info(msg)
-            return {'status': 'exists', 'message': msg}
+            result = {'status': 'exists', 'message': msg}
+            metrics.record_task_success(task_id, result)
+            return result
         
         vacancy_data = parser.get_vacancy_details(vacancy_id)
         if not vacancy_data or not isinstance(vacancy_data, dict) or 'id' not in vacancy_data:
             msg = f'Вакансия {vacancy_id} не найдена или данные некорректны'
             logger.error(msg)
-            return {'status': 'error', 'message': msg}
+            result = {'status': 'error', 'message': msg}
+            metrics.record_task_failure(task_id, ValueError(msg))
+            return result
         
         vacancy = parser.parse_vacancy(vacancy_data)
         if not vacancy:
             msg = 'Ошибка при парсинге вакансии'
             logger.error(msg)
-            return {'status': 'error', 'message': msg}
+            result = {'status': 'error', 'message': msg}
+            metrics.record_task_failure(task_id, ValueError(msg))
+            return result
         if existing_vacancy:
             if force_update:
                 new_data = {
@@ -197,12 +229,28 @@ def parse_single_vacancy_task(self, vacancy_id, force_update=False):
                     for field, value in new_data.items():
                         setattr(existing_vacancy, field, value)
                     existing_vacancy.save()
-                    return {'status': 'updated', 'message': f'Вакансия {vacancy_id} обновлена'}
-                return {'status': 'no_changes', 'message': 'Изменений не обнаружено'}
-            return {'status': 'exists', 'message': f'Вакансия {vacancy_id} уже есть в базе'}
+                    result = {'status': 'updated', 'message': f'Вакансия {vacancy_id} обновлена'}
+                    metrics.record_task_success(task_id, result)
+                    return result
+                result = {'status': 'no_changes', 'message': 'Изменений не обнаружено'}
+                metrics.record_task_success(task_id, result)
+                return result
+            result = {'status': 'exists', 'message': f'Вакансия {vacancy_id} уже есть в базе'}
+            metrics.record_task_success(task_id, result)
+            return result
         else:
             vacancy.save()
-            return {'status': 'created', 'message': f'Вакансия {vacancy_id} успешно сохранена'}
+            result = {'status': 'created', 'message': f'Вакансия {vacancy_id} успешно сохранена'}
+            metrics.record_task_success(task_id, result)
+            return result
     except Exception as exc:
         logger.error('Ошибка при обработке вакансии %s', vacancy_id, exc_info=True)
-        raise self.retry(exc=exc)
+        metrics.record_task_failure(task_id, exc)
+        error_handler.handle_error(exc, {'task_id': task_id, 'vacancy_id': vacancy_id})
+        
+        # Проверка необходимости retry
+        retries = self.request.retries
+        if error_handler.should_retry(exc, retries, self.max_retries):
+            delay = error_handler.get_retry_delay(exc, retries, base_delay=self.default_retry_delay)
+            raise self.retry(exc=exc, countdown=delay)
+        raise

@@ -4,10 +4,10 @@
 """
 
 from typing import Dict, Any
-from src.core.utils.celery.base import CeleryModuleConfig
+from ..core.celery_config_base import VacanciesParserCeleryConfigBase
 
 
-class SuperjobCeleryConfig(CeleryModuleConfig):
+class SuperjobCeleryConfig(VacanciesParserCeleryConfigBase):
     """
     Конфигурация Celery для модуля парсинга SuperJob.
     """
