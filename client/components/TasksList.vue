@@ -3,11 +3,11 @@
     <!-- Заголовок и кнопка создания -->
     <div class="vp-page-header">
       <h2>
-        <FileText class="me-2" :size="28" />
+        <FileText :size="28" />
         Задачи парсинга вакансий
       </h2>
       <button class="vp-btn-create" @click="showCreateModal = true">
-        <Plus :size="20" class="me-1" />
+        <Plus :size="20" />
         Создать задачу
       </button>
     </div>
@@ -72,7 +72,7 @@
     </div>
 
     <div v-else-if="error" class="vp-error-state">
-      <AlertCircle :size="20" class="me-2" />
+      <AlertCircle :size="20" />
       {{ error }}
     </div>
 
@@ -95,7 +95,7 @@
             <h5 class="vp-task-title">
               <router-link 
                 :to="`/vacancies-parser/tasks/${task.id}`" 
-                class="text-decoration-none"
+                class="vp-link"
               >
                 {{ task.name || 'Задача без названия' }}
               </router-link>
@@ -103,14 +103,14 @@
             
             <!-- Бейджи -->
             <div class="vp-task-badges">
-              <span class="badge rounded-pill" :class="getSourceBadgeClass(task.source)">
+              <span class="vp-badge vp-badge-rounded" :class="getSourceBadgeClass(task.source)">
                 {{ task.source_display }}
               </span>
-              <span class="badge rounded-pill bg-secondary">
+              <span class="vp-badge vp-badge-rounded vp-badge-secondary">
                 {{ task.parsing_mode_display }}
               </span>
-              <span class="badge rounded-pill" :class="getStatusBadgeClass(task.status)">
-                <component :is="getStatusIcon(task.status)" :size="12" class="me-1" />
+              <span class="vp-badge vp-badge-rounded" :class="getStatusBadgeClass(task.status)">
+                <component :is="getStatusIcon(task.status)" :size="12" />
                 {{ task.status_display }}
               </span>
             </div>
@@ -130,12 +130,12 @@
 
         <!-- Прогресс-бар -->
         <div class="vp-task-progress-section">
-          <div class="d-flex justify-content-between align-items-center mb-1">
-            <span class="small text-muted">
-              <TrendingUp :size="14" class="me-1" />
+          <div class="vp-task-progress-header">
+            <span class="vp-text-sm vp-text-muted">
+              <TrendingUp :size="14" />
               Прогресс выполнения
             </span>
-            <span class="small fw-bold" :class="getProgressColor(task.progress_percent)">
+            <span class="vp-text-sm vp-font-weight-semibold" :class="getProgressColor(task.progress_percent)">
               {{ task.progress_percent }}%
             </span>
           </div>
@@ -146,7 +146,7 @@
         <div class="vp-task-stats-grid">
           <!-- Всего -->
           <div class="vp-task-stat-item">
-            <Database :size="18" class="text-primary me-2" />
+            <Database :size="18" class="vp-text-primary" />
             <div>
               <div class="vp-stat-label">Всего</div>
               <div class="vp-stat-value">{{ task.total_items || 0 }}</div>
@@ -155,19 +155,19 @@
           
           <!-- Выполнено -->
           <div class="vp-task-stat-item">
-            <CheckCircle :size="18" class="text-success me-2" />
+            <CheckCircle :size="18" class="vp-text-success" />
             <div>
               <div class="vp-stat-label">Выполнено</div>
-              <div class="vp-stat-value text-success">{{ task.completed_items || 0 }}</div>
+              <div class="vp-stat-value vp-text-success">{{ task.completed_items || 0 }}</div>
             </div>
           </div>
           
           <!-- Ошибки -->
           <div class="vp-task-stat-item">
-            <XCircle :size="18" :class="task.failed_items > 0 ? 'text-danger' : 'text-muted'" class="me-2" />
+            <XCircle :size="18" :class="task.failed_items > 0 ? 'vp-text-danger' : 'vp-text-muted'" />
             <div>
               <div class="vp-stat-label">Ошибки</div>
-              <div class="vp-stat-value" :class="task.failed_items > 0 ? 'text-danger' : 'text-muted'">
+              <div class="vp-stat-value" :class="task.failed_items > 0 ? 'vp-text-danger' : 'vp-text-muted'">
                 {{ task.failed_items || 0 }}
               </div>
             </div>
@@ -175,10 +175,10 @@
           
           <!-- Осталось -->
           <div class="vp-task-stat-item">
-            <Clock :size="18" class="text-info me-2" />
+            <Clock :size="18" class="vp-text-info" />
             <div>
               <div class="vp-stat-label">Осталось</div>
-              <div class="vp-stat-value text-info">
+              <div class="vp-stat-value vp-text-info">
                 {{ (task.total_items || 0) - (task.completed_items || 0) - (task.failed_items || 0) }}
               </div>
             </div>
@@ -188,19 +188,19 @@
         <!-- Дополнительная информация -->
         <div class="vp-task-footer">
           <div>
-            <Calendar :size="14" class="me-1" />
+            <Calendar :size="14" />
             Создана: {{ formatDate(task.created_at) }}
           </div>
           <div v-if="task.started_at">
-            <Play :size="14" class="me-1" />
+            <Play :size="14" />
             Запущена: {{ formatRelativeTime(task.started_at) }}
           </div>
           <div v-if="task.completed_at">
-            <CheckCircle2 :size="14" class="me-1" />
+            <CheckCircle2 :size="14" />
             Завершена: {{ formatRelativeTime(task.completed_at) }}
           </div>
           <div v-if="task.created_by_username">
-            <User :size="14" class="me-1" />
+            <User :size="14" />
             {{ task.created_by_username }}
           </div>
         </div>
@@ -324,23 +324,23 @@ function getTaskCardClass(task) {
 
 function getSourceBadgeClass(source) {
   const classes = {
-    'headhunter': 'bg-danger',
-    'habr_career': 'bg-info',
-    'superjob': 'bg-success'
+    'headhunter': 'vp-badge-danger',
+    'habr_career': 'vp-badge-info',
+    'superjob': 'vp-badge-success'
   }
-  return classes[source] || 'bg-secondary'
+  return classes[source] || 'vp-badge-secondary'
 }
 
 function getStatusBadgeClass(status) {
   const classes = {
-    'created': 'bg-secondary',
-    'running': 'bg-primary',
-    'paused': 'bg-warning',
-    'stopped': 'bg-dark',
-    'completed': 'bg-success',
-    'failed': 'bg-danger'
+    'created': 'vp-badge-secondary',
+    'running': 'vp-badge-primary',
+    'paused': 'vp-badge-warning',
+    'stopped': 'vp-badge-secondary',
+    'completed': 'vp-badge-success',
+    'failed': 'vp-badge-danger'
   }
-  return classes[status] || 'bg-secondary'
+  return classes[status] || 'vp-badge-secondary'
 }
 
 function formatDate(dateString) {
@@ -385,11 +385,11 @@ function getStatusIcon(status) {
 }
 
 function getProgressColor(percent) {
-  if (percent >= 100) return 'text-success'
-  if (percent >= 75) return 'text-info'
-  if (percent >= 50) return 'text-primary'
-  if (percent >= 25) return 'text-warning'
-  return 'text-secondary'
+  if (percent >= 100) return 'vp-text-success'
+  if (percent >= 75) return 'vp-text-info'
+  if (percent >= 50) return 'vp-text-primary'
+  if (percent >= 25) return 'vp-text-warning'
+  return 'vp-text-secondary'
 }
 
 async function handlePause(task) {

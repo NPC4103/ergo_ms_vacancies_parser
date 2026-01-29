@@ -4,6 +4,61 @@
 @import '../mixins';
 @import '../base';
 
+.vp-task-detail-grid {
+  display: grid;
+  grid-template-columns: 2fr 1fr;
+  gap: $vp-spacing-lg;
+  margin-bottom: $vp-spacing-lg;
+
+  @include vp-mobile {
+    grid-template-columns: 1fr;
+  }
+}
+
+.vp-task-detail-main {
+  min-width: 0;
+}
+
+.vp-task-detail-sidebar {
+  min-width: 0;
+}
+
+.vp-task-detail-section {
+  margin-bottom: $vp-spacing-lg;
+}
+
+.vp-info-list {
+  display: flex;
+  flex-direction: column;
+  gap: $vp-spacing-sm;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.vp-info-item {
+  @include vp-flex(row, $vp-spacing-sm, flex-start, space-between);
+  padding: $vp-spacing-xs 0;
+  border-bottom: 1px solid $vp-border-color;
+
+  &:last-child {
+    border-bottom: none;
+  }
+
+  dt {
+    font-weight: $vp-font-weight-medium;
+    color: $vp-text-secondary;
+    font-size: $vp-font-size-sm;
+  }
+
+  dd {
+    margin: 0;
+    color: $vp-text-primary;
+    font-size: $vp-font-size-sm;
+    text-align: right;
+  }
+}
+
 .#{$vp-prefix}task-detail {
   .#{$vp-prefix}page-header {
     @include vp-flex(row, $vp-spacing-md, flex-start, space-between);

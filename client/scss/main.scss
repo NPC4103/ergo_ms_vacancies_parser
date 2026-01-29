@@ -11,8 +11,17 @@
 @import './components/task-controls';
 @import './components/modal';
 @import './components/filters';
+@import './components/badges';
+@import './components/vacancy-card';
+@import './components/alerts';
+@import './components/form-sections';
 
 // Страницы
 @import './pages/dashboard';
 @import './pages/tasks-list';
 @import './pages/task-detail';
+@import './pages/vacancies-results';
+@import './pages/vacancy-detail';
+@import './pages/vacancies-list';
+@import './pages/vacancy-stats';
+@import './pages/parsing-control';

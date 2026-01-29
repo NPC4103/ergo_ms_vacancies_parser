@@ -53,15 +53,15 @@
             <!-- ============================================== -->
             <!-- HEADHUNTER API -->
             <!-- ============================================== -->
-            <div v-if="formData.source === 'headhunter' && formData.parsing_mode === 'api'" class="card mb-3">
-              <div class="card-header bg-danger text-white">
+            <div v-if="formData.source === 'headhunter' && formData.parsing_mode === 'api'" class="vp-form-section vp-form-section-headhunter">
+              <div class="vp-form-section-header vp-form-section-header-danger">
                 <strong>🔴 HeadHunter — API режим</strong>
               </div>
-              <div class="card-body">
-                <div class="row">
-                  <div class="col-md-6 mb-3">
-                    <label class="form-label">Регион *</label>
-                    <select v-model="formData.config.area" class="form-select" required>
+              <div class="vp-form-section-body">
+                <div class="vp-form-section-grid">
+                  <div class="vp-form-section-field">
+                    <label>Регион *</label>
+                    <select v-model="formData.config.area" class="vp-form-control" required>
                       <option value="">Выберите регион</option>
                       <option value="1">Москва</option>
                       <option value="2">Санкт-Петербург</option>
@@ -71,53 +71,53 @@
                     </select>
                   </div>
                   
-                  <div class="col-md-6 mb-3">
-                    <label class="form-label">Количество страниц *</label>
+                  <div class="vp-form-section-field">
+                    <label>Количество страниц *</label>
                     <input 
                       v-model.number="formData.config.pages" 
                       type="number" 
-                      class="form-control" 
+                      class="vp-form-control" 
                       min="1" 
                       max="20"
                       required
                     >
-                    <div class="form-text">Макс. 20 страниц (API ограничение)</div>
+                    <div class="vp-form-text">Макс. 20 страниц (API ограничение)</div>
                   </div>
                 </div>
 
-                <div class="row">
-                  <div class="col-md-6 mb-3">
-                    <label class="form-label">Вакансий на страницу</label>
-                    <select v-model.number="formData.config.per_page" class="form-select">
+                <div class="vp-form-section-grid">
+                  <div class="vp-form-section-field">
+                    <label>Вакансий на страницу</label>
+                    <select v-model.number="formData.config.per_page" class="vp-form-control">
                       <option :value="20">20</option>
                       <option :value="50">50</option>
                       <option :value="100">100 (рекомендуется)</option>
                     </select>
                   </div>
                   
-                  <div class="col-md-6 mb-3">
-                    <label class="form-label">Задержка между запросами (сек)</label>
+                  <div class="vp-form-section-field">
+                    <label>Задержка между запросами (сек)</label>
                     <input 
                       v-model.number="formData.config.delay" 
                       type="number" 
-                      class="form-control" 
+                      class="vp-form-control" 
                       min="0.1" 
                       max="5" 
                       step="0.1"
                     >
-                    <div class="form-text">Рекомендуется 0.5 сек для API</div>
+                    <div class="vp-form-text">Рекомендуется 0.5 сек для API</div>
                   </div>
                 </div>
 
-                <div class="mb-3">
-                  <label class="form-label">Поисковый запрос</label>
+                <div class="vp-form-section-field">
+                  <label>Поисковый запрос</label>
                   <input 
                     v-model="formData.config.text" 
                     type="text" 
-                    class="form-control" 
+                    class="vp-form-control" 
                     placeholder="Например: python developer"
                   >
-                  <div class="form-text">Оставьте пустым для поиска всех вакансий</div>
+                  <div class="vp-form-text">Оставьте пустым для поиска всех вакансий</div>
                 </div>
               </div>
             </div>
@@ -125,20 +125,22 @@
             <!-- ============================================== -->
             <!-- HEADHUNTER HTML -->
             <!-- ============================================== -->
-            <div v-else-if="formData.source === 'headhunter' && formData.parsing_mode === 'html'" class="card mb-3">
-              <div class="card-header bg-warning text-dark">
+            <div v-else-if="formData.source === 'headhunter' && formData.parsing_mode === 'html'" class="vp-form-section vp-form-section-headhunter">
+              <div class="vp-form-section-header vp-form-section-header-warning">
                 <strong>🟡 HeadHunter — HTML режим (веб-парсинг)</strong>
               </div>
-              <div class="card-body">
-                <div class="alert alert-warning mb-3">
-                  <Info :size="18" class="me-2" />
-                  HTML режим медленнее и может блокироваться. Используйте API режим если возможно.
+              <div class="vp-form-section-body">
+                <div class="vp-alert vp-alert-warning">
+                  <Info :size="18" class="vp-alert-icon" />
+                  <div class="vp-alert-content">
+                    HTML режим медленнее и может блокироваться. Используйте API режим если возможно.
+                  </div>
                 </div>
 
-                <div class="row">
-                  <div class="col-md-6 mb-3">
-                    <label class="form-label">Регион *</label>
-                    <select v-model="formData.config.area" class="form-select" required>
+                <div class="vp-form-section-grid">
+                  <div class="vp-form-section-field">
+                    <label>Регион *</label>
+                    <select v-model="formData.config.area" class="vp-form-control" required>
                       <option value="">Выберите регион</option>
                       <option value="1">Москва</option>
                       <option value="2">Санкт-Петербург</option>
@@ -146,33 +148,33 @@
                     </select>
                   </div>
                   
-                  <div class="col-md-6 mb-3">
-                    <label class="form-label">Макс. страниц *</label>
+                  <div class="vp-form-section-field">
+                    <label>Макс. страниц *</label>
                     <input 
                       v-model.number="formData.config.max_pages" 
                       type="number" 
-                      class="form-control" 
+                      class="vp-form-control" 
                       min="1" 
                       max="50"
                       required
                     >
-                    <div class="form-text">Рекомендуется не более 10 страниц</div>
+                    <div class="vp-form-text">Рекомендуется не более 10 страниц</div>
                   </div>
                 </div>
 
-                <div class="row">
-                  <div class="col-md-6 mb-3">
-                    <label class="form-label">Вакансий на страницу</label>
-                    <select v-model.number="formData.config.items_per_page" class="form-select">
+                <div class="vp-form-section-grid">
+                  <div class="vp-form-section-field">
+                    <label>Вакансий на страницу</label>
+                    <select v-model.number="formData.config.items_per_page" class="vp-form-control">
                       <option :value="20">20</option>
                       <option :value="50">50 (рекомендуется)</option>
                       <option :value="100">100</option>
                     </select>
                   </div>
                   
-                  <div class="col-md-6 mb-3">
-                    <label class="form-label">Опыт работы</label>
-                    <select v-model="formData.config.experience" class="form-select">
+                  <div class="vp-form-section-field">
+                    <label>Опыт работы</label>
+                    <select v-model="formData.config.experience" class="vp-form-control">
                       <option value="">Любой</option>
                       <option value="noExperience">Без опыта</option>
                       <option value="between1And3">1-3 года</option>
@@ -182,12 +184,12 @@
                   </div>
                 </div>
 
-                <div class="mb-3">
-                  <label class="form-label">Поисковый запрос</label>
+                <div class="vp-form-section-field">
+                  <label>Поисковый запрос</label>
                   <input 
                     v-model="formData.config.text" 
                     type="text" 
-                    class="form-control" 
+                    class="vp-form-control" 
                     placeholder="Например: python developer"
                   >
                 </div>
@@ -197,30 +199,30 @@
             <!-- ============================================== -->
             <!-- HABR CAREER API -->
             <!-- ============================================== -->
-            <div v-else-if="formData.source === 'habr_career' && formData.parsing_mode === 'api'" class="card mb-3">
-              <div class="card-header bg-info text-white">
+            <div v-else-if="formData.source === 'habr_career' && formData.parsing_mode === 'api'" class="vp-form-section vp-form-section-habr">
+              <div class="vp-form-section-header vp-form-section-header-info">
                 <strong>🔵 Habr Career — API режим</strong>
               </div>
-              <div class="card-body">
-                <div class="row">
-                  <div class="col-md-6 mb-3">
-                    <label class="form-label">Макс. страниц *</label>
+              <div class="vp-form-section-body">
+                <div class="vp-form-section-grid">
+                  <div class="vp-form-section-field">
+                    <label>Макс. страниц *</label>
                     <input 
                       v-model.number="formData.config.max_pages" 
                       type="number" 
-                      class="form-control" 
+                      class="vp-form-control" 
                       min="1" 
                       max="50"
                       required
                     >
                   </div>
                   
-                  <div class="col-md-6 mb-3">
-                    <label class="form-label">Задержка (сек)</label>
+                  <div class="vp-form-section-field">
+                    <label>Задержка (сек)</label>
                     <input 
                       v-model.number="formData.config.delay" 
                       type="number" 
-                      class="form-control" 
+                      class="vp-form-control" 
                       min="0.1" 
                       max="5" 
                       step="0.1"
@@ -228,12 +230,12 @@
                   </div>
                 </div>
 
-                <div class="mb-3">
-                  <label class="form-label">Поисковый запрос</label>
+                <div class="vp-form-section-field">
+                  <label>Поисковый запрос</label>
                   <input 
                     v-model="formData.config.q" 
                     type="text" 
-                    class="form-control" 
+                    class="vp-form-control" 
                     placeholder="Например: python"
                   >
                 </div>
@@ -243,18 +245,18 @@
             <!-- ============================================== -->
             <!-- HABR CAREER HTML -->
             <!-- ============================================== -->
-            <div v-else-if="formData.source === 'habr_career' && formData.parsing_mode === 'html'" class="card mb-3">
-              <div class="card-header bg-warning text-dark">
+            <div v-else-if="formData.source === 'habr_career' && formData.parsing_mode === 'html'" class="vp-form-section vp-form-section-habr">
+              <div class="vp-form-section-header vp-form-section-header-warning">
                 <strong>🟡 Habr Career — HTML режим</strong>
               </div>
-              <div class="card-body">
-                <div class="row">
-                  <div class="col-md-6 mb-3">
-                    <label class="form-label">Макс. страниц *</label>
+              <div class="vp-form-section-body">
+                <div class="vp-form-section-grid">
+                  <div class="vp-form-section-field">
+                    <label>Макс. страниц *</label>
                     <input 
                       v-model.number="formData.config.max_pages" 
                       type="number" 
-                      class="form-control" 
+                      class="vp-form-control" 
                       min="1" 
                       max="30"
                       required
@@ -262,12 +264,12 @@
                   </div>
                 </div>
 
-                <div class="mb-3">
-                  <label class="form-label">Поисковый запрос</label>
+                <div class="vp-form-section-field">
+                  <label>Поисковый запрос</label>
                   <input 
                     v-model="formData.config.q" 
                     type="text" 
-                    class="form-control" 
+                    class="vp-form-control" 
                     placeholder="Например: python"
                   >
                 </div>
@@ -277,30 +279,30 @@
             <!-- ============================================== -->
             <!-- SUPERJOB API -->
             <!-- ============================================== -->
-            <div v-else-if="formData.source === 'superjob' && formData.parsing_mode === 'api'" class="card mb-3">
-              <div class="card-header bg-success text-white">
+            <div v-else-if="formData.source === 'superjob' && formData.parsing_mode === 'api'" class="vp-form-section vp-form-section-superjob">
+              <div class="vp-form-section-header vp-form-section-header-success">
                 <strong>🟢 SuperJob — API режим</strong>
               </div>
-              <div class="card-body">
-                <div class="row">
-                  <div class="col-md-6 mb-3">
-                    <label class="form-label">Макс. страниц *</label>
+              <div class="vp-form-section-body">
+                <div class="vp-form-section-grid">
+                  <div class="vp-form-section-field">
+                    <label>Макс. страниц *</label>
                     <input 
                       v-model.number="formData.config.max_pages" 
                       type="number" 
-                      class="form-control" 
+                      class="vp-form-control" 
                       min="1" 
                       max="50"
                       required
                     >
                   </div>
                   
-                  <div class="col-md-6 mb-3">
-                    <label class="form-label">Задержка (сек)</label>
+                  <div class="vp-form-section-field">
+                    <label>Задержка (сек)</label>
                     <input 
                       v-model.number="formData.config.delay" 
                       type="number" 
-                      class="form-control" 
+                      class="vp-form-control" 
                       min="0.1" 
                       max="5" 
                       step="0.1"
@@ -308,12 +310,12 @@
                   </div>
                 </div>
 
-                <div class="mb-3">
-                  <label class="form-label">Ключевые слова</label>
+                <div class="vp-form-section-field">
+                  <label>Ключевые слова</label>
                   <input 
                     v-model="formData.config.keywords" 
                     type="text" 
-                    class="form-control" 
+                    class="vp-form-control" 
                     placeholder="Например: python developer"
                   >
                 </div>
@@ -323,18 +325,18 @@
             <!-- ============================================== -->
             <!-- SUPERJOB HTML -->
             <!-- ============================================== -->
-            <div v-else-if="formData.source === 'superjob' && formData.parsing_mode === 'html'" class="card mb-3">
-              <div class="card-header bg-warning text-dark">
+            <div v-else-if="formData.source === 'superjob' && formData.parsing_mode === 'html'" class="vp-form-section vp-form-section-superjob">
+              <div class="vp-form-section-header vp-form-section-header-warning">
                 <strong>🟡 SuperJob — HTML режим</strong>
               </div>
-              <div class="card-body">
-                <div class="row">
-                  <div class="col-md-6 mb-3">
-                    <label class="form-label">Макс. страниц *</label>
+              <div class="vp-form-section-body">
+                <div class="vp-form-section-grid">
+                  <div class="vp-form-section-field">
+                    <label>Макс. страниц *</label>
                     <input 
                       v-model.number="formData.config.max_pages" 
                       type="number" 
-                      class="form-control" 
+                      class="vp-form-control" 
                       min="1" 
                       max="30"
                       required
@@ -342,12 +344,12 @@
                   </div>
                 </div>
 
-                <div class="mb-3">
-                  <label class="form-label">Ключевые слова</label>
+                <div class="vp-form-section-field">
+                  <label>Ключевые слова</label>
                   <input 
                     v-model="formData.config.keywords" 
                     type="text" 
-                    class="form-control" 
+                    class="vp-form-control" 
                     placeholder="Например: python developer"
                   >
                 </div>
@@ -357,9 +359,11 @@
             <!-- ============================================== -->
             <!-- ВЫБЕРИТЕ РЕЖИМ -->
             <!-- ============================================== -->
-            <div v-else-if="formData.source && !formData.parsing_mode" class="alert alert-secondary">
-              <Info :size="20" class="me-2" />
-              Выберите режим парсинга для настройки параметров.
+            <div v-else-if="formData.source && !formData.parsing_mode" class="vp-alert vp-alert-secondary">
+              <Info :size="20" class="vp-alert-icon" />
+              <div class="vp-alert-content">
+                Выберите режим парсинга для настройки параметров.
+              </div>
             </div>
           </form>
         </div>
@@ -374,7 +378,7 @@
             :disabled="!isFormValid || loading"
             @click="handleSubmit"
           >
-            <span v-if="loading" class="vp-spinner me-2"></span>
+            <span v-if="loading" class="vp-spinner"></span>
             Создать и запустить
           </button>
         </div>

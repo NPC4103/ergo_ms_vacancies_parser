@@ -8,7 +8,7 @@
 
     <!-- Ошибка -->
     <div v-else-if="error" class="vp-error-state">
-      <AlertCircle :size="20" class="me-2" />
+      <AlertCircle :size="20" />
       {{ error }}
     </div>
 
@@ -18,18 +18,18 @@
       <div class="vp-page-header">
         <div>
           <button class="vp-back-button" @click="goBack">
-            <ArrowLeft :size="16" class="me-1" />
+            <ArrowLeft :size="16" />
             Назад к списку
           </button>
           <h2>{{ currentTask.name }}</h2>
           <div class="vp-task-badges">
-            <span class="badge" :class="getSourceBadgeClass(currentTask.source)">
+            <span class="vp-badge vp-badge-rounded" :class="getSourceBadgeClass(currentTask.source)">
               {{ currentTask.source_display }}
             </span>
-            <span class="badge bg-secondary">
+            <span class="vp-badge vp-badge-rounded vp-badge-secondary">
               {{ currentTask.parsing_mode_display }}
             </span>
-            <span class="badge" :class="getStatusBadgeClass(currentTask.status)">
+            <span class="vp-badge vp-badge-rounded" :class="getStatusBadgeClass(currentTask.status)">
               {{ currentTask.status_display }}
             </span>
           </div>
@@ -104,9 +104,8 @@
       </div>
 
       <!-- Конфигурация -->
-      <div class="row mb-4">
-        <div class="col-md-12">
-          <div class="vp-config-card">
+      <div class="vp-task-detail-section">
+        <div class="vp-config-card">
             <div class="vp-card-header">
               <h5 class="vp-card-title">Конфигурация парсинга</h5>
               <button 
@@ -156,9 +155,8 @@
       </div>
 
       <!-- Статистика -->
-      <div v-if="currentTask.is_finished" class="row mb-4">
-        <div class="col-md-12">
-          <div class="vp-statistics-card">
+      <div v-if="currentTask.is_finished" class="vp-task-detail-section">
+        <div class="vp-statistics-card">
             <div class="vp-card-header">
               <h5 class="vp-card-title">
                 <BarChart2 :size="20" />
@@ -197,10 +195,12 @@
       </div>
 
       <!-- Ошибка -->
-      <div v-if="currentTask.error_message" class="alert alert-danger">
-        <AlertCircle :size="20" class="me-2" />
-        <strong>Ошибка выполнения:</strong>
-        <div class="mt-2">{{ currentTask.error_message }}</div>
+      <div v-if="currentTask.error_message" class="vp-alert vp-alert-danger">
+        <AlertCircle :size="20" class="vp-alert-icon" />
+        <div class="vp-alert-content">
+          <div class="vp-alert-title">Ошибка выполнения:</div>
+          <div>{{ currentTask.error_message }}</div>
+        </div>
       </div>
     </div>
   </div>
@@ -246,23 +246,23 @@ function goBack() {
 
 function getSourceBadgeClass(source) {
   const classes = {
-    'headhunter': 'bg-danger',
-    'habr_career': 'bg-info',
-    'superjob': 'bg-success'
+    'headhunter': 'vp-badge-danger',
+    'habr_career': 'vp-badge-info',
+    'superjob': 'vp-badge-success'
   }
-  return classes[source] || 'bg-secondary'
+  return classes[source] || 'vp-badge-secondary'
 }
 
 function getStatusBadgeClass(status) {
   const classes = {
-    'created': 'bg-secondary',
-    'running': 'bg-primary',
-    'paused': 'bg-warning',
-    'stopped': 'bg-dark',
-    'completed': 'bg-success',
-    'failed': 'bg-danger'
+    'created': 'vp-badge-secondary',
+    'running': 'vp-badge-primary',
+    'paused': 'vp-badge-warning',
+    'stopped': 'vp-badge-secondary',
+    'completed': 'vp-badge-success',
+    'failed': 'vp-badge-danger'
   }
-  return classes[status] || 'bg-secondary'
+  return classes[status] || 'vp-badge-secondary'
 }
 
 function formatDate(dateString) {

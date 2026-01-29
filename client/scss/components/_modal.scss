@@ -126,15 +126,21 @@
     color: $vp-text-primary;
     transition: all $vp-transition-base;
 
-      &:focus {
-        outline: none;
-        border-color: $vp-primary-var;
-        box-shadow: 0 0 0 3px rgba(13, 110, 253, 0.1);
-      }
+    &:focus {
+      outline: none;
+      border-color: $vp-primary-var;
+      box-shadow: 0 0 0 3px rgba(13, 110, 253, 0.1);
+    }
 
     &::placeholder {
       color: $vp-text-secondary;
     }
+
+  }
+
+  // Стили для select элементов
+  select.#{$vp-prefix}form-control {
+    @include vp-select;
   }
 
   .#{$vp-prefix}form-text {

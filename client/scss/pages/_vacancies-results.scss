@@ -1,0 +1,52 @@
+// Стили страницы результатов парсинга вакансий
+
+@import '../variables';
+@import '../mixins';
+@import '../base';
+
+.#{$vp-prefix}vacancies-results {
+  .#{$vp-prefix}page-header {
+    @include vp-flex(row, $vp-spacing-md, center, space-between);
+    margin-bottom: $vp-spacing-xl;
+
+    @include vp-mobile {
+      flex-direction: column;
+      align-items: flex-start;
+      gap: $vp-spacing-md;
+    }
+
+    h2 {
+      @extend .#{$vp-prefix}title;
+      margin: 0;
+      @include vp-flex(row, $vp-spacing-sm, center, flex-start);
+    }
+  }
+
+  .#{$vp-prefix}stats-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: $vp-spacing-md;
+    margin-bottom: $vp-spacing-lg;
+
+    @include vp-mobile {
+      grid-template-columns: repeat(2, 1fr);
+    }
+  }
+
+  .#{$vp-prefix}stat-card {
+    @include vp-card(false);
+    text-align: center;
+    padding: $vp-spacing-lg;
+
+    h3 {
+      font-size: $vp-font-size-xxl;
+      font-weight: $vp-font-weight-bold;
+      margin: 0 0 $vp-spacing-xs 0;
+    }
+
+    .#{$vp-prefix}stat-label {
+      font-size: $vp-font-size-sm;
+      color: $vp-text-secondary;
+    }
+  }
+}

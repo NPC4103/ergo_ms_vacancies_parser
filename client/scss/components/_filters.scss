@@ -3,6 +3,22 @@
 @import '../variables';
 @import '../mixins';
 
+.#{$vp-prefix}input-group {
+  @include vp-flex(row, 0, center, flex-start);
+
+  .#{$vp-prefix}form-control {
+    flex: 1;
+    border-top-right-radius: 0;
+    border-bottom-right-radius: 0;
+  }
+
+  .#{$vp-prefix}btn-secondary {
+    border-top-left-radius: 0;
+    border-bottom-left-radius: 0;
+    border-left: none;
+  }
+}
+
 .#{$vp-prefix}filters {
   @include vp-card(false);
   margin-bottom: $vp-spacing-xl;
@@ -18,12 +34,14 @@
   }
 
   .#{$vp-prefix}filter-group {
+    display: flex;
+    flex-direction: column;
+    gap: $vp-spacing-xs;
+    
     label {
-      display: block;
       font-size: $vp-font-size-sm;
       font-weight: $vp-font-weight-medium;
       color: $vp-text-primary;
-      margin-bottom: $vp-spacing-xs;
     }
 
     .#{$vp-prefix}filter-control {
@@ -42,10 +60,25 @@
         box-shadow: 0 0 0 3px rgba(13, 110, 253, 0.1);
       }
     }
-  }
 
+    // Стили для select элементов
+    select.#{$vp-prefix}filter-control {
+      @include vp-select;
+      padding-right: 2.25rem;
+    }
+  }
+  
   .#{$vp-prefix}filter-search {
+    display: flex;
+    flex-direction: column;
+    gap: $vp-spacing-xs;
     position: relative;
+    
+    label {
+      font-size: $vp-font-size-sm;
+      font-weight: $vp-font-weight-medium;
+      color: $vp-text-primary;
+    }
 
     .#{$vp-prefix}filter-input {
       width: 100%;
@@ -78,10 +111,15 @@
       cursor: pointer;
       border-radius: $vp-border-radius-sm;
       transition: all $vp-transition-base;
+      @include vp-flex(row, 0, center, center);
 
       &:hover {
         background: $vp-bg-secondary;
         color: $vp-text-primary;
+      }
+      
+      svg {
+        flex-shrink: 0;
       }
     }
   }

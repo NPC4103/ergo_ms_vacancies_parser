@@ -146,23 +146,23 @@ function formatRelativeTime(dateString) {
 
 function getStatusBadgeClass(status) {
   const classes = {
-    'created': 'bg-secondary',
-    'running': 'bg-primary',
-    'paused': 'bg-warning',
-    'stopped': 'bg-dark',
-    'completed': 'bg-success',
-    'failed': 'bg-danger'
+    'created': 'vp-badge-secondary',
+    'running': 'vp-badge-primary',
+    'paused': 'vp-badge-warning',
+    'stopped': 'vp-badge-secondary',
+    'completed': 'vp-badge-success',
+    'failed': 'vp-badge-danger'
   }
-  return classes[status] || 'bg-secondary'
+  return classes[status] || 'vp-badge-secondary'
 }
 
 function getSourceBadgeClass(source) {
   const classes = {
-    'headhunter': 'bg-danger',
-    'habr_career': 'bg-info',
-    'superjob': 'bg-success'
+    'headhunter': 'vp-badge-danger',
+    'habr_career': 'vp-badge-info',
+    'superjob': 'vp-badge-success'
   }
-  return classes[source] || 'bg-secondary'
+  return classes[source] || 'vp-badge-secondary'
 }
 
 function navigateToTask(taskId) {
@@ -240,9 +240,9 @@ onUnmounted(() => {
     <div v-if="recentActiveTasks.length > 0" class="vp-section">
       <div class="vp-section-header">
         <div class="vp-section-title-group">
-          <Loader :size="20" class="text-primary" />
+          <Loader :size="20" class="vp-text-primary" />
           <h3>Активные задачи</h3>
-          <span class="badge bg-primary">{{ recentActiveTasks.length }}</span>
+          <span class="vp-badge vp-badge-primary vp-badge-rounded">{{ recentActiveTasks.length }}</span>
         </div>
         <router-link 
           :to="{ name: 'VacanciesParser', query: { status: 'running' } }" 
@@ -262,10 +262,10 @@ onUnmounted(() => {
             <div class="vp-task-item-title-group">
               <h4 class="vp-task-item-title">{{ task.name || 'Задача без названия' }}</h4>
               <div class="vp-task-item-badges">
-                <span class="badge rounded-pill" :class="getSourceBadgeClass(task.source)">
+                <span class="vp-badge vp-badge-rounded" :class="getSourceBadgeClass(task.source)">
                   {{ task.source_display }}
                 </span>
-                <span class="badge rounded-pill" :class="getStatusBadgeClass(task.status)">
+                <span class="vp-badge vp-badge-rounded" :class="getStatusBadgeClass(task.status)">
                   {{ task.status_display }}
                 </span>
               </div>
@@ -277,20 +277,20 @@ onUnmounted(() => {
           <TaskProgressBar :task="task" />
           <div class="vp-task-item-stats">
             <span class="vp-task-stat">
-              <CheckCircle :size="14" class="text-success" />
+              <CheckCircle :size="14" class="vp-text-success" />
               {{ task.completed_items || 0 }} выполнено
             </span>
             <span class="vp-task-stat">
-              <XCircle :size="14" :class="task.failed_items > 0 ? 'text-danger' : 'text-muted'" />
+              <XCircle :size="14" :class="task.failed_items > 0 ? 'vp-text-danger' : 'vp-text-muted'" />
               {{ task.failed_items || 0 }} ошибок
             </span>
             <span class="vp-task-stat">
-              <Clock :size="14" class="text-info" />
+              <Clock :size="14" class="vp-text-info" />
               {{ (task.total_items || 0) - (task.completed_items || 0) - (task.failed_items || 0) }} осталось
             </span>
           </div>
           <div class="vp-task-item-footer">
-            <span class="text-muted small">
+            <span class="vp-text-muted vp-text-sm">
               Запущена: {{ formatRelativeTime(task.started_at || task.created_at) }}
             </span>
           </div>
@@ -302,7 +302,7 @@ onUnmounted(() => {
     <div class="vp-section">
       <div class="vp-section-header">
         <div class="vp-section-title-group">
-          <Calendar :size="20" class="text-info" />
+          <Calendar :size="20" class="vp-text-info" />
           <h3>Расписание автоматического парсинга</h3>
         </div>
       </div>
@@ -313,7 +313,7 @@ onUnmounted(() => {
             <div class="vp-schedule-title">Ежедневный парсинг за вчера и сегодня</div>
             <div class="vp-schedule-description">Полный парсинг всех технологий с максимальным покрытием</div>
           </div>
-          <span class="badge bg-danger">HeadHunter</span>
+          <span class="vp-badge vp-badge-danger vp-badge-rounded">HeadHunter</span>
         </div>
         <div class="vp-schedule-item">
           <div class="vp-schedule-time">03:00</div>
@@ -321,7 +321,7 @@ onUnmounted(() => {
             <div class="vp-schedule-title">Глубокое сканирование топ-40</div>
             <div class="vp-schedule-description">Категории: языки программирования и фреймворки</div>
           </div>
-          <span class="badge bg-danger">HeadHunter</span>
+          <span class="vp-badge vp-badge-danger vp-badge-rounded">HeadHunter</span>
         </div>
         <div class="vp-schedule-item">
           <div class="vp-schedule-time">06:15</div>
@@ -329,7 +329,7 @@ onUnmounted(() => {
             <div class="vp-schedule-title">Языки программирования (рабочие дни)</div>
             <div class="vp-schedule-description">Также в 12:15 и 18:15</div>
           </div>
-          <span class="badge bg-danger">HeadHunter</span>
+          <span class="vp-badge vp-badge-danger vp-badge-rounded">HeadHunter</span>
         </div>
         <div class="vp-schedule-item">
           <div class="vp-schedule-time">07:30</div>
@@ -337,7 +337,7 @@ onUnmounted(() => {
             <div class="vp-schedule-title">Фреймворки (рабочие дни)</div>
             <div class="vp-schedule-description">Также в 13:30 и 19:30</div>
           </div>
-          <span class="badge bg-danger">HeadHunter</span>
+          <span class="vp-badge vp-badge-danger vp-badge-rounded">HeadHunter</span>
         </div>
         <div class="vp-schedule-note">
           <Info :size="16" />
@@ -350,9 +350,9 @@ onUnmounted(() => {
     <div v-if="recentFinishedTasks.length > 0" class="vp-section">
       <div class="vp-section-header">
         <div class="vp-section-title-group">
-          <BarChart3 :size="20" class="text-success" />
+          <BarChart3 :size="20" class="vp-text-success" />
           <h3>Последние завершенные задачи</h3>
-          <span class="badge bg-success">{{ recentFinishedTasks.length }}</span>
+          <span class="vp-badge vp-badge-success vp-badge-rounded">{{ recentFinishedTasks.length }}</span>
         </div>
         <router-link 
           :to="{ name: 'VacanciesParser', query: { status: 'completed' } }" 
@@ -372,34 +372,34 @@ onUnmounted(() => {
             <div class="vp-task-item-title-group">
               <h4 class="vp-task-item-title">{{ task.name || 'Задача без названия' }}</h4>
               <div class="vp-task-item-badges">
-                <span class="badge rounded-pill" :class="getSourceBadgeClass(task.source)">
+                <span class="vp-badge vp-badge-rounded" :class="getSourceBadgeClass(task.source)">
                   {{ task.source_display }}
                 </span>
-                <span class="badge rounded-pill" :class="getStatusBadgeClass(task.status)">
+                <span class="vp-badge vp-badge-rounded" :class="getStatusBadgeClass(task.status)">
                   {{ task.status_display }}
                 </span>
               </div>
             </div>
-            <div class="vp-task-item-progress-value text-success">
+            <div class="vp-task-item-progress-value vp-text-success">
               {{ task.progress_percent }}%
             </div>
           </div>
           <div class="vp-task-item-stats">
             <span class="vp-task-stat">
-              <CheckCircle :size="14" class="text-success" />
+              <CheckCircle :size="14" class="vp-text-success" />
               {{ task.completed_items || 0 }} выполнено
             </span>
             <span class="vp-task-stat">
-              <XCircle :size="14" :class="task.failed_items > 0 ? 'text-danger' : 'text-muted'" />
+              <XCircle :size="14" :class="task.failed_items > 0 ? 'vp-text-danger' : 'vp-text-muted'" />
               {{ task.failed_items || 0 }} ошибок
             </span>
             <span class="vp-task-stat">
-              <Briefcase :size="14" class="text-primary" />
+              <Briefcase :size="14" class="vp-text-primary" />
               {{ task.total_items || 0 }} всего
             </span>
           </div>
           <div class="vp-task-item-footer">
-            <span class="text-muted small">
+            <span class="vp-text-muted vp-text-sm">
               Завершена: {{ formatRelativeTime(task.completed_at || task.updated_at) }}
             </span>
           </div>

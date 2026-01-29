@@ -1,0 +1,53 @@
+// Стили страницы статистики вакансий
+
+@import '../variables';
+@import '../mixins';
+@import '../base';
+
+.#{$vp-prefix}vacancy-stats {
+  .#{$vp-prefix}page-header {
+    @include vp-flex(row, $vp-spacing-md, center, space-between);
+    margin-bottom: $vp-spacing-xl;
+
+    @include vp-mobile {
+      flex-direction: column;
+      align-items: flex-start;
+      gap: $vp-spacing-md;
+    }
+
+    h2 {
+      @extend .#{$vp-prefix}title;
+      margin: 0;
+      @include vp-flex(row, $vp-spacing-sm, center, flex-start);
+    }
+  }
+
+  .#{$vp-prefix}stats-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+    gap: $vp-spacing-lg;
+    margin-bottom: $vp-spacing-xl;
+
+    @include vp-mobile {
+      grid-template-columns: 1fr;
+    }
+  }
+
+  .#{$vp-prefix}stat-card {
+    @include vp-card(false);
+    padding: $vp-spacing-lg;
+
+    .#{$vp-prefix}stat-title {
+      font-size: $vp-font-size-lg;
+      font-weight: $vp-font-weight-semibold;
+      margin-bottom: $vp-spacing-md;
+      @include vp-flex(row, $vp-spacing-xs, center, flex-start);
+    }
+
+    .#{$vp-prefix}stat-value {
+      font-size: $vp-font-size-xxl;
+      font-weight: $vp-font-weight-bold;
+      color: $vp-primary-var;
+    }
+  }
+}

@@ -388,3 +388,39 @@
     }
   }
 }
+
+// Стили для select элементов
+@mixin vp-select {
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%236c757d' d='M6 9L1 4h10z'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 0.75rem center;
+  background-size: 12px;
+  padding-right: 2.5rem;
+  cursor: pointer;
+  transition: all $vp-transition-base;
+
+  &:hover {
+    border-color: $vp-primary-var;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%230d6efd' d='M6 9L1 4h10z'/%3E%3C/svg%3E");
+  }
+
+  &:focus {
+    outline: none;
+    border-color: $vp-primary-var;
+    box-shadow: 0 0 0 3px rgba(13, 110, 253, 0.1);
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%230d6efd' d='M6 9L1 4h10z'/%3E%3C/svg%3E");
+  }
+
+  &:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+    background-color: $vp-bg-secondary;
+  }
+
+  option {
+    padding: 0.5rem;
+    background: $vp-bg-primary;
+    color: $vp-text-primary;
+  }
+}

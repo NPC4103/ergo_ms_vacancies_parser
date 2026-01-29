@@ -84,3 +84,80 @@
   color: $vp-text-primary;
   margin: 0;
 }
+
+// Утилитарные классы для текста
+.#{$vp-prefix}text-primary {
+  color: $vp-primary-var;
+}
+
+.#{$vp-prefix}text-secondary {
+  color: $vp-text-secondary;
+}
+
+.#{$vp-prefix}text-muted {
+  color: $vp-text-muted;
+}
+
+.#{$vp-prefix}text-success {
+  color: $vp-success-var;
+}
+
+.#{$vp-prefix}text-danger {
+  color: $vp-danger-var;
+}
+
+.#{$vp-prefix}text-warning {
+  color: $vp-warning-var;
+}
+
+.#{$vp-prefix}text-info {
+  color: $vp-info-var;
+}
+
+.#{$vp-prefix}text-sm {
+  font-size: $vp-font-size-sm;
+}
+
+.#{$vp-prefix}text-xs {
+  font-size: $vp-font-size-xs;
+}
+
+// Сетка (заменяет Bootstrap grid)
+.#{$vp-prefix}grid {
+  display: grid;
+  gap: $vp-spacing-md;
+
+  &.#{$vp-prefix}grid-2 {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  &.#{$vp-prefix}grid-3 {
+    grid-template-columns: repeat(3, 1fr);
+  }
+
+  &.#{$vp-prefix}grid-4 {
+    grid-template-columns: repeat(4, 1fr);
+  }
+
+  @include vp-mobile {
+    grid-template-columns: 1fr;
+  }
+}
+
+// Ссылки
+.#{$vp-prefix}link {
+  color: $vp-primary-var;
+  text-decoration: none;
+  transition: color $vp-transition-base;
+
+  &:hover {
+    color: $vp-primary-dark-var;
+    text-decoration: underline;
+  }
+}
+
+// Глобальные стили для select элементов
+select.#{$vp-prefix}form-control,
+select.#{$vp-prefix}filter-control {
+  @include vp-select;
+}

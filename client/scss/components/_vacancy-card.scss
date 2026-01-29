@@ -1,0 +1,93 @@
+// Стили карточек вакансий
+
+@import '../variables';
+@import '../mixins';
+
+.#{$vp-prefix}vacancy-card {
+  @include vp-card(true);
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+
+  .#{$vp-prefix}vacancy-header {
+    margin-bottom: $vp-spacing-md;
+
+    .#{$vp-prefix}vacancy-title {
+      font-size: $vp-font-size-lg;
+      font-weight: $vp-font-weight-semibold;
+      color: $vp-text-primary;
+      margin: 0 0 $vp-spacing-xs 0;
+      line-height: 1.4;
+
+      a {
+        color: inherit;
+        text-decoration: none;
+        transition: color $vp-transition-base;
+        @include vp-flex(row, $vp-spacing-xs, center, flex-start);
+
+        &:hover {
+          color: $vp-primary-var;
+        }
+      }
+    }
+  }
+
+  .#{$vp-prefix}vacancy-body {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: $vp-spacing-sm;
+
+    .#{$vp-prefix}vacancy-info {
+      @include vp-flex(row, $vp-spacing-xs, center, flex-start);
+      font-size: $vp-font-size-sm;
+      color: $vp-text-secondary;
+
+      svg {
+        flex-shrink: 0;
+      }
+    }
+
+    .#{$vp-prefix}vacancy-salary {
+      font-size: $vp-font-size-base;
+      font-weight: $vp-font-weight-semibold;
+      color: $vp-success-var;
+      margin: $vp-spacing-xs 0;
+    }
+
+    .#{$vp-prefix}vacancy-badges {
+      @include vp-flex(row, $vp-spacing-xs, center, flex-start);
+      flex-wrap: wrap;
+      margin-top: $vp-spacing-xs;
+    }
+  }
+
+  .#{$vp-prefix}vacancy-footer {
+    margin-top: $vp-spacing-md;
+    padding-top: $vp-spacing-md;
+    border-top: 1px solid $vp-border-color;
+    @include vp-flex(row, $vp-spacing-sm, center, space-between);
+    flex-wrap: wrap;
+
+    .#{$vp-prefix}vacancy-date {
+      font-size: $vp-font-size-xs;
+      color: $vp-text-secondary;
+      @include vp-flex(row, $vp-spacing-xs, center, flex-start);
+
+      svg {
+        flex-shrink: 0;
+      }
+    }
+  }
+}
+
+.#{$vp-prefix}vacancies-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: $vp-spacing-lg;
+
+  @include vp-mobile {
+    grid-template-columns: 1fr;
+    gap: $vp-spacing-md;
+  }
+}
