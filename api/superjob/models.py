@@ -67,6 +67,7 @@ class SuperJobVacancy(models.Model):
         verbose_name = "Вакансия SuperJob"
         verbose_name_plural = "Вакансии SuperJob"
         ordering = ['-published_at']
+        db_table = 'vpm_sj_vacancy'
         indexes = [
             models.Index(fields=['title']),
             models.Index(fields=['company_name']),
@@ -168,6 +169,7 @@ class SuperJobVacancyVersion(models.Model):
         verbose_name = "Версия вакансии SuperJob"
         verbose_name_plural = "Версии вакансий SuperJob"
         ordering = ['-version_number']
+        db_table = 'vpm_sj_vacancy_version'
         unique_together = ['vacancy', 'version_number']
         indexes = [
             models.Index(fields=['vacancy', 'version_number']),
@@ -209,6 +211,7 @@ class SuperJobVacancyChangeHistory(models.Model):
         verbose_name = "История изменений вакансии SuperJob"
         verbose_name_plural = "История изменений вакансий SuperJob"
         ordering = ['-created_at']
+        db_table = 'vpm_sj_vacancy_change_history'
         indexes = [
             models.Index(fields=['vacancy', 'created_at']),
             models.Index(fields=['field_name']),

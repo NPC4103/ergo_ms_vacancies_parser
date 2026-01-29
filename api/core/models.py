@@ -198,6 +198,7 @@ class ParsingTask(models.Model):
         verbose_name = "Задача парсинга"
         verbose_name_plural = "Задачи парсинга"
         ordering = ['-created_at']
+        db_table = 'vpm_parsing_task'
         
         indexes = [
             models.Index(fields=['source', 'status']),
@@ -210,11 +211,15 @@ class ParsingTask(models.Model):
         constraints = [
             models.CheckConstraint(
                 check=models.Q(completed_items__lte=models.F('total_items')),
-                name='parsing_task_completed_lte_total'
+                name='vpm_parsing_task_completed_lte_total'
             ),
             models.CheckConstraint(
                 check=models.Q(failed_items__lte=models.F('total_items')),
-                name='parsing_task_failed_lte_total'
+                name='vpm_parsing_task_failed_lte_total'
+            ),
+            models.UniqueConstraint(
+                fields=['source', 'config_hash'],
+                name='vpm_parsing_task_unique_config'
             ),
         ]
     
@@ -506,6 +511,7 @@ class TaskItem(models.Model):
         verbose_name = "Элемент задачи"
         verbose_name_plural = "Элементы задач"
         ordering = ['id']
+        db_table = 'vpm_task_item'
         
         unique_together = [['task', 'source_item_id']]
         
@@ -520,6 +526,8 @@ class TaskItem(models.Model):
             models.Index(fields=['url_hash']),
             # Для статистики
             models.Index(fields=['task', 'status', 'updated_at']),
+            # Для быстрого поиска по task и source_item_id
+            models.Index(fields=['task', 'source_item_id']),
         ]
     
     def __str__(self):

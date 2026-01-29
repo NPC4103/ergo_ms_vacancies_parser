@@ -4,9 +4,13 @@
 Унифицирует данные из HeadHunter, Habr Career, SuperJob в общую схему.
 """
 
+import hashlib
+import json
+
 from django.contrib.postgres.fields import ArrayField
 from django.core.validators import MinValueValidator, MaxValueValidator
 from django.db import models
+from django.core.exceptions import ValidationError
 from django.utils import timezone
 
 
@@ -61,7 +65,7 @@ class NormalizedVacancy(models.Model):
     )
     
     task_item = models.ForeignKey(
-        'TaskItem',
+        'vacancies_parser.TaskItem',
         on_delete=models.SET_NULL,
         null=True,
         blank=True,
@@ -325,10 +329,47 @@ class NormalizedVacancy(models.Model):
         verbose_name="Версия"
     )
     
+    # ============================================================
+    # ДЕДУПЛИКАЦИЯ
+    # ============================================================
+    
+    # Хэш для дедупликации (агрегированный критерий)
+    deduplication_hash = models.CharField(
+        max_length=64,
+        db_index=True,
+        default='',
+        blank=True,
+        verbose_name="Хэш для дедупликации",
+        help_text="Агрегированный хэш ключевых полей для поиска дубликатов"
+    )
+    
+    # Связь с оригинальной вакансией (если это дубликат)
+    original_vacancy_id = models.IntegerField(
+        null=True,
+        blank=True,
+        verbose_name="ID оригинальной вакансии",
+        help_text="FK на NormalizedVacancy, если это дубликат"
+    )
+    
+    # Статус дедупликации
+    DEDUPLICATION_STATUS_CHOICES = [
+        ('pending', 'Ожидает проверки'),
+        ('original', 'Оригинал'),
+        ('duplicate', 'Дубликат'),
+    ]
+    deduplication_status = models.CharField(
+        max_length=20,
+        choices=DEDUPLICATION_STATUS_CHOICES,
+        default='pending',
+        verbose_name="Статус дедупликации",
+        db_index=True
+    )
+    
     class Meta:
         verbose_name = "Нормализованная вакансия"
         verbose_name_plural = "Нормализованные вакансии"
         ordering = ['-created_at']
+        db_table = 'vpm_vacancy'
         
         unique_together = [['source', 'source_id']]
         
@@ -344,7 +385,33 @@ class NormalizedVacancy(models.Model):
             models.Index(fields=['parsing_mode', 'created_at']),
             # Поиск по дате публикации
             models.Index(fields=['published_at', 'is_active']),
+            # Для дедупликации
+            models.Index(fields=['title', 'company_name']),
+            models.Index(fields=['title', 'area_name']),
+            models.Index(fields=['salary_from', 'salary_to']),
+            models.Index(fields=['deduplication_hash']),
         ]
+    
+    def save(self, *args, **kwargs):
+        """Переопределение save для генерации хэша дедупликации"""
+        if not self.deduplication_hash:
+            self.deduplication_hash = self.generate_deduplication_hash()
+        super().save(*args, **kwargs)
+    
+    def clean(self):
+        """Валидация поля contacts"""
+        if self.contacts and not isinstance(self.contacts, dict):
+            raise ValidationError({
+                'contacts': 'Поле contacts должно быть JSON объектом или null'
+            })
+        
+        if self.contacts:
+            required_keys = ['name', 'email']
+            for key in required_keys:
+                if key not in self.contacts:
+                    raise ValidationError({
+                        f'contacts.{key}': f'Отсутствует обязательное поле: {key}'
+                    })
     
     def __str__(self):
         return f"[{self.source}] {self.title} - {self.company_name}"
@@ -352,6 +419,23 @@ class NormalizedVacancy(models.Model):
     # ============================================================
     # МЕТОДЫ
     # ============================================================
+    
+    def generate_deduplication_hash(self) -> str:
+        """Генерация хэша для дедупликации на основе ключевых полей"""
+        key_fields = [
+            self.title.lower() if self.title else '',
+            self.company_name.lower() if self.company_name else '',
+            str(self.salary_from or ''),
+            str(self.salary_to or ''),
+            self.area_name.lower() if self.area_name else '',
+        ]
+        hash_string = '|'.join(key_fields)
+        return hashlib.sha256(hash_string.encode()).hexdigest()
+    
+    def update_deduplication_hash(self):
+        """Обновление хэша для дедупликации"""
+        self.deduplication_hash = self.generate_deduplication_hash()
+        self.save(update_fields=['deduplication_hash'])
     
     def get_salary_display(self) -> str:
         """Форматированная зарплата для отображения"""
@@ -387,6 +471,60 @@ class NormalizedVacancy(models.Model):
         self.is_active = True
         self.archived = False
         self.save(update_fields=['is_active', 'archived', 'updated_at'])
+    
+    def is_complete(self) -> bool:
+        """
+        Проверка полноты записи вакансии.
+        
+        Запись считается полной, если содержит:
+        1. Все обязательные поля (source, source_id, source_url, title, company_name, description)
+        2. Локацию (area_name или address)
+        3. Хотя бы одну из следующих категорий:
+           - Зарплата (salary_from или salary_to)
+           - Требования (experience, employment_type или schedule)
+           - Навыки (key_skills или professional_roles)
+        
+        Returns:
+            bool: True если запись полная
+        """
+        # Проверка обязательных полей (проверяем, что они не пустые)
+        required_fields = [
+            self.source,
+            self.source_id,
+            self.source_url,
+            self.title,
+            self.company_name,
+            self.description
+        ]
+        if not all(field and str(field).strip() for field in required_fields):
+            return False
+        
+        # Проверка локации (хотя бы одно поле должно быть заполнено)
+        has_location = bool(
+            (self.area_name and str(self.area_name).strip()) or
+            (self.address and str(self.address).strip())
+        )
+        if not has_location:
+            return False
+        
+        # Проверка дополнительной информации (хотя бы одна категория должна быть заполнена)
+        has_salary = bool(self.salary_from or self.salary_to)
+        
+        # Проверка требований (employment_type и schedule - это ArrayField)
+        has_requirements = bool(
+            self.experience or
+            (self.employment_type and isinstance(self.employment_type, list) and len(self.employment_type) > 0) or
+            (self.schedule and isinstance(self.schedule, list) and len(self.schedule) > 0)
+        )
+        
+        # Проверка навыков (key_skills и professional_roles - это ArrayField)
+        has_skills = bool(
+            (self.key_skills and isinstance(self.key_skills, list) and len(self.key_skills) > 0) or
+            (self.professional_roles and isinstance(self.professional_roles, list) and len(self.professional_roles) > 0)
+        )
+        
+        # Запись полная, если есть хотя бы одна категория дополнительной информации
+        return has_salary or has_requirements or has_skills
 
 
 class VacancyChangeHistory(models.Model):
@@ -411,7 +549,7 @@ class VacancyChangeHistory(models.Model):
     )
     
     task_item = models.ForeignKey(
-        'TaskItem',
+        'vacancies_parser.TaskItem',
         on_delete=models.SET_NULL,
         null=True,
         blank=True,
@@ -440,6 +578,7 @@ class VacancyChangeHistory(models.Model):
         verbose_name = "История изменений вакансии"
         verbose_name_plural = "История изменений вакансий"
         ordering = ['-changed_at']
+        db_table = 'vpm_vacancy_change_history'
         
         unique_together = [['vacancy', 'version']]
         
@@ -549,6 +688,7 @@ class ParsingStatistics(models.Model):
         verbose_name = "Статистика парсинга"
         verbose_name_plural = "Статистика парсинга"
         ordering = ['-created_at']
+        db_table = 'vpm_parsing_statistics'
         
         indexes = [
             models.Index(fields=['task', 'created_at']),

@@ -419,9 +419,8 @@ class SuperJobAPIParser(BaseParser):
         raise NotImplementedError
 
 
-# Регистрация парсеров в фабрике
+# Регистрация парсеров в фабрике при импорте модуля
+# Регистрация происходит автоматически, дублирование предотвращается в ParserFactory.register()
 ParserFactory.register('headhunter', 'api', HeadHunterAPIParser)
 ParserFactory.register('habr_career', 'api', HabrCareerAPIParser)
 ParserFactory.register('superjob', 'api', SuperJobAPIParser)
-
-logger.info("API парсеры зарегистрированы в фабрике")

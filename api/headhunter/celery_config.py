@@ -12,6 +12,9 @@ class HeadhunterCeleryConfig(CeleryModuleConfig):
     Конфигурация Celery для модуля парсинга HeadHunter.
     """
     
+    def __init__(self, module_name: str):
+        super().__init__(module_name)
+    
     def get_task_routes(self) -> Dict[str, Dict[str, Any]]:
         """Маршруты задач для парсинга HeadHunter"""
         return {

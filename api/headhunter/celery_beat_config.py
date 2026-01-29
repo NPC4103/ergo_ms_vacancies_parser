@@ -22,6 +22,9 @@ class HeadhunterCeleryBeatConfig(CeleryBeatModuleConfig):
     - Приоритизация по важности категорий
     """
     
+    def __init__(self, module_name: str):
+        super().__init__(module_name)
+    
     def get_beat_schedule(self) -> Dict[str, Dict[str, Any]]:
         """
         Расписание периодических задач для парсинга вакансий.

@@ -65,6 +65,7 @@ class Vacancy(models.Model):
         verbose_name = "Вакансия Хабр Карьера"
         verbose_name_plural = "Вакансии Хабр Карьера"
         ordering = ['-published_at']
+        db_table = 'vpm_hc_vacancy'
         indexes = [
             models.Index(fields=['title']),
             models.Index(fields=['company_name']),
@@ -161,6 +162,7 @@ class VacancyVersion(models.Model):
         verbose_name = "Версия вакансии Хабр Карьера"
         verbose_name_plural = "Версии вакансий Хабр Карьера"
         ordering = ['-version_number']
+        db_table = 'vpm_hc_vacancy_version'
         unique_together = ['vacancy', 'version_number']
         indexes = [
             models.Index(fields=['vacancy', 'version_number']),
@@ -204,6 +206,7 @@ class VacancyChangeHistory(models.Model):
         verbose_name = "История изменений вакансии Хабр Карьера"
         verbose_name_plural = "История изменений вакансий Хабр Карьера"
         ordering = ['-created_at']
+        db_table = 'vpm_hc_vacancy_change_history'
         indexes = [
             models.Index(fields=['vacancy', 'created_at']),
             models.Index(fields=['field_name']),

@@ -163,8 +163,22 @@ class ParserFactory:
             parser_class: Класс парсера
         """
         key = (source, parsing_mode)
+        
+        # Проверка на дублирование регистрации
+        if key in cls._parsers:
+            existing_class = cls._parsers[key]
+            if existing_class == parser_class:
+                # Та же регистрация - пропускаем без логирования
+                return
+            else:
+                # Другой класс - предупреждение
+                logger.warning(
+                    f"Парсер {source}/{parsing_mode} уже зарегистрирован как "
+                    f"{existing_class.__name__}, перезаписываем на {parser_class.__name__}"
+                )
+        
         cls._parsers[key] = parser_class
-        logger.info(f"Зарегистрирован парсер {source}/{parsing_mode}: {parser_class.__name__}")
+        logger.debug(f"Зарегистрирован парсер {source}/{parsing_mode}: {parser_class.__name__}")
     
     @classmethod
     def create_parser(
@@ -197,7 +211,7 @@ class ParserFactory:
                 f"Доступные: {available}"
             )
         
-        logger.info(f"Создан парсер {source}/{parsing_mode}")
+        logger.debug(f"Создан парсер {source}/{parsing_mode}")
         return parser_class(source=source, parsing_mode=parsing_mode, **kwargs)
     
     @classmethod

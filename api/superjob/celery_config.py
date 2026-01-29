@@ -12,6 +12,9 @@ class SuperjobCeleryConfig(CeleryModuleConfig):
     Конфигурация Celery для модуля парсинга SuperJob.
     """
     
+    def __init__(self, module_name: str):
+        super().__init__(module_name)
+    
     def get_task_routes(self) -> Dict[str, Dict[str, Any]]:
         """Маршруты задач для парсинга SuperJob"""
         return {
@@ -76,4 +79,4 @@ class SuperjobCeleryConfig(CeleryModuleConfig):
             'superjob_max_concurrent_tasks': 2,
             'superjob_rate_limit': '8/m',  # 8 запросов в минуту
             'superjob_retry_delay': 120,  # Задержка между повторами 2 минуты
-        } 
+        }

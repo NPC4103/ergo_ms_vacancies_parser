@@ -13,6 +13,9 @@ from src.core.utils.celery_beat import CeleryBeatModuleConfig
 class VacanciesParserBeatConfig(CeleryBeatModuleConfig):
     """Конфигурация Celery Beat для модуля vacancies_parser"""
     
+    def __init__(self, module_name: str):
+        super().__init__(module_name)
+    
     def get_beat_schedule(self):
         """
         Расписание периодических задач.
@@ -45,4 +48,4 @@ class VacanciesParserBeatConfig(CeleryBeatModuleConfig):
 
 
 # Экземпляр конфигурации (автоматически обнаруживается системой)
-celery_beat_config = VacanciesParserBeatConfig()
+# Примечание: менеджер создает экземпляр с module_name, поэтому не создаем здесь

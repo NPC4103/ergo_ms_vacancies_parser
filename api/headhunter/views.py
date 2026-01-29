@@ -80,7 +80,8 @@ class VacancyViewSet(SwaggerSafeMixin, viewsets.ReadOnlyModelViewSet):
     def versions(self, request, pk=None):
         """Получить все версии вакансии"""
         vacancy = self.get_object()
-        versions = vacancy.versions.all()
+        # Оптимизация: prefetch_related для обратной связи
+        versions = vacancy.versions.all().select_related('vacancy')
         serializer = VacancyVersionSerializer(versions, many=True)
         return Response(serializer.data)
     
@@ -114,15 +115,17 @@ class VacancyViewSet(SwaggerSafeMixin, viewsets.ReadOnlyModelViewSet):
         
         if version_number:
             try:
-                version = vacancy.versions.get(version_number=int(version_number))
-                changes = version.changes.all()
+                # Оптимизация: select_related для ForeignKey
+                version = vacancy.versions.select_related('vacancy').get(version_number=int(version_number))
+                changes = version.changes.all().select_related('vacancy', 'version')
             except VacancyVersion.DoesNotExist:
                 return Response(
                     {'error': 'Версия не найдена'}, 
                     status=status.HTTP_404_NOT_FOUND
                 )
         else:
-            changes = vacancy.change_history.all()
+            # Оптимизация: select_related для ForeignKey
+            changes = vacancy.change_history.all().select_related('vacancy', 'version')
         
         serializer = VacancyChangeHistorySerializer(changes, many=True)
         return Response(serializer.data)

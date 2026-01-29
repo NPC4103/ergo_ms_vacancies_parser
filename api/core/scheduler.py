@@ -309,6 +309,30 @@ class TaskScheduler:
                 if count > 0:
                     error_breakdown[error_type] = count
             
+            # Подсчет полных и неполных записей
+            from .normalized_models import NormalizedVacancy
+            
+            # Получаем все вакансии, связанные с completed TaskItems
+            completed_vacancy_ids = TaskItem.objects.filter(
+                task=task,
+                status='completed',
+                result_vacancy_id__isnull=False
+            ).values_list('result_vacancy_id', flat=True)
+            
+            # Подсчет полных записей
+            complete_count = 0
+            incomplete_count = 0
+            
+            if completed_vacancy_ids:
+                # Используем батч-обработку для проверки полноты
+                vacancies = NormalizedVacancy.objects.filter(id__in=completed_vacancy_ids)
+                
+                for vacancy in vacancies:
+                    if vacancy.is_complete():
+                        complete_count += 1
+                    else:
+                        incomplete_count += 1
+            
             # Создание статистики
             stats = ParsingStatistics.objects.create(
                 task=task,
@@ -318,8 +342,8 @@ class TaskScheduler:
                 successful_items=completed,
                 failed_items=failed,
                 blocked_items=blocked,
-                complete_records=completed,  # TODO: уточнить критерии полноты
-                incomplete_records=0,
+                complete_records=complete_count,
+                incomplete_records=incomplete_count,
                 error_breakdown=error_breakdown,
             )
             

@@ -67,6 +67,7 @@ class Vacancy(models.Model):
         verbose_name = "Вакансия"
         verbose_name_plural = "Вакансии"
         ordering = ['-published_at']
+        db_table = 'vpm_hh_vacancy'
         indexes = [
             models.Index(fields=['title']),
             models.Index(fields=['company_name']),
@@ -75,6 +76,9 @@ class Vacancy(models.Model):
             models.Index(fields=['hh_id']),
             models.Index(fields=['employer_id']),
             models.Index(fields=['current_version']),
+            # Для быстрого поиска по критериям
+            models.Index(fields=['title', 'city']),
+            models.Index(fields=['salary_from', 'salary_to']),
         ]
     
     def __str__(self):
@@ -219,6 +223,7 @@ class VacancyVersion(models.Model):
         verbose_name = "Версия вакансии"
         verbose_name_plural = "Версии вакансий"
         ordering = ['-version_number']
+        db_table = 'vpm_hh_vacancy_version'
         unique_together = ['vacancy', 'version_number']
         indexes = [
             models.Index(fields=['vacancy', 'version_number']),
@@ -259,6 +264,7 @@ class VacancyChangeHistory(models.Model):
         verbose_name = "История изменений вакансии"
         verbose_name_plural = "История изменений вакансий"
         ordering = ['-created_at']
+        db_table = 'vpm_hh_vacancy_change_history'
         indexes = [
             models.Index(fields=['vacancy', 'version']),
             models.Index(fields=['field_name']),

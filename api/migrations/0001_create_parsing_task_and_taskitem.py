@@ -42,6 +42,7 @@ class Migration(migrations.Migration):
                 'verbose_name': 'Задача парсинга',
                 'verbose_name_plural': 'Задачи парсинга',
                 'ordering': ['-created_at'],
+                'db_table': 'vpm_parsing_task',
             },
         ),
         migrations.CreateModel(
@@ -71,6 +72,7 @@ class Migration(migrations.Migration):
                 'verbose_name': 'Элемент задачи',
                 'verbose_name_plural': 'Элементы задач',
                 'ordering': ['id'],
+                'db_table': 'vpm_task_item',
             },
         ),
         migrations.AddIndex(

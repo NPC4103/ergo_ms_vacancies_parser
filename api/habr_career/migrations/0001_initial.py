@@ -53,6 +53,7 @@ class Migration(migrations.Migration):
                 'verbose_name': 'Вакансия Хабр Карьера',
                 'verbose_name_plural': 'Вакансии Хабр Карьера',
                 'ordering': ['-published_at'],
+                'db_table': 'vpm_hc_vacancy',
                 'indexes': [models.Index(fields=['title'], name='vacancies_p_title_abdde4_idx'), models.Index(fields=['company_name'], name='vacancies_p_company_518ca5_idx'), models.Index(fields=['city'], name='vacancies_p_city_534235_idx'), models.Index(fields=['published_at'], name='vacancies_p_publish_99d469_idx'), models.Index(fields=['habr_id'], name='vacancies_p_habr_id_6dc4b2_idx'), models.Index(fields=['current_version'], name='vacancies_p_current_b2673f_idx')],
             },
         ),
@@ -69,6 +70,7 @@ class Migration(migrations.Migration):
                 'verbose_name': 'Версия вакансии Хабр Карьера',
                 'verbose_name_plural': 'Версии вакансий Хабр Карьера',
                 'ordering': ['-version_number'],
+                'db_table': 'vpm_hc_vacancy_version',
             },
         ),
         migrations.CreateModel(
@@ -86,6 +88,7 @@ class Migration(migrations.Migration):
                 'verbose_name': 'История изменений вакансии Хабр Карьера',
                 'verbose_name_plural': 'История изменений вакансий Хабр Карьера',
                 'ordering': ['-created_at'],
+                'db_table': 'vpm_hc_vacancy_change_history',
             },
         ),
         migrations.AddIndex(

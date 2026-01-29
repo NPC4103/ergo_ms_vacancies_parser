@@ -977,8 +977,7 @@ class SuperJobHTMLParser(BaseHTMLParser):
 
 
 # Регистрация HTML парсеров в фабрике при импорте модуля
+# Регистрация происходит автоматически, дублирование предотвращается в ParserFactory.register()
 ParserFactory.register('headhunter', 'html', HeadHunterHTMLParser)
 ParserFactory.register('habr_career', 'html', HabrCareerHTMLParser)
 ParserFactory.register('superjob', 'html', SuperJobHTMLParser)
-
-logger.info("HTML парсеры зарегистрированы в фабрике")

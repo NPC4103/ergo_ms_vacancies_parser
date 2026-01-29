@@ -98,8 +98,16 @@ def create_parsing_task(
                 )
                 task_items.append(task_item)
             
-            # Bulk create для производительности
-            TaskItem.objects.bulk_create(task_items, ignore_conflicts=True)
+            # Bulk create для производительности с оптимизацией batch_size
+            # Используем batch_size=500 для оптимальной производительности
+            BATCH_SIZE = 500
+            created_count = 0
+            for i in range(0, len(task_items), BATCH_SIZE):
+                batch = task_items[i:i + BATCH_SIZE]
+                TaskItem.objects.bulk_create(batch, ignore_conflicts=True, batch_size=BATCH_SIZE)
+                created_count += len(batch)
+            
+            logger.debug(f"Bulk create TaskItems: создано {created_count} из {len(task_items)}")
             
             # Обновление счетчика total_items
             task.total_items = len(task_items)

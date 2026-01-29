@@ -103,6 +103,9 @@ class ParsingTaskViewSet(SwaggerSafeMixin, viewsets.ModelViewSet):
         """Фильтрация queryset"""
         queryset = super().get_queryset()
         
+        # Оптимизация: select_related для ForeignKey
+        queryset = queryset.select_related('created_by')
+        
         # Фильтр по пользователю (если не admin)
         if not self.request.user.is_staff:
             queryset = queryset.filter(
@@ -231,8 +234,8 @@ class ParsingTaskViewSet(SwaggerSafeMixin, viewsets.ModelViewSet):
         """
         task = self.get_object()
         
-        # Фильтры
-        items_qs = TaskItem.objects.filter(task=task)
+        # Фильтры с оптимизацией
+        items_qs = TaskItem.objects.filter(task=task).select_related('task')
         
         status_filter = request.query_params.get('status')
         if status_filter:
@@ -264,7 +267,8 @@ class ParsingTaskViewSet(SwaggerSafeMixin, viewsets.ModelViewSet):
         task = self.get_object()
         
         try:
-            stats = ParsingStatistics.objects.get(task=task)
+            # Оптимизация: select_related для ForeignKey
+            stats = ParsingStatistics.objects.select_related('task', 'task__created_by').get(task=task)
             serializer = ParsingStatisticsSerializer(stats)
             return Response(serializer.data)
         except ParsingStatistics.DoesNotExist:
@@ -334,7 +338,7 @@ class TaskItemViewSet(SwaggerSafeMixin, viewsets.ReadOnlyModelViewSet):
     - GET /api/vacancies_parser/items/{id}/ - детальная информация
     """
     
-    queryset = TaskItem.objects.all()
+    queryset = TaskItem.objects.all().select_related('task', 'task__created_by')
     serializer_class = TaskItemSerializer
     permission_classes = [IsAuthenticated]
     pagination_class = StandardResultsSetPagination
@@ -361,7 +365,7 @@ class NormalizedVacancyViewSet(SwaggerSafeMixin, viewsets.ReadOnlyModelViewSet):
     - GET /api/vacancies_parser/vacancies/{id}/changes/ - история изменений
     """
     
-    queryset = NormalizedVacancy.objects.all()
+    queryset = NormalizedVacancy.objects.all().select_related('task_item', 'task_item__task')
     permission_classes = [IsAuthenticated]
     pagination_class = StandardResultsSetPagination
     filter_backends = [DjangoFilterBackend, SearchFilter, OrderingFilter]
@@ -458,7 +462,7 @@ class ParsingStatisticsViewSet(SwaggerSafeMixin, viewsets.ReadOnlyModelViewSet):
     - GET /api/vacancies_parser/statistics/{id}/ - детальная информация
     """
     
-    queryset = ParsingStatistics.objects.all()
+    queryset = ParsingStatistics.objects.all().select_related('task', 'task__created_by')
     serializer_class = ParsingStatisticsSerializer
     permission_classes = [IsAuthenticated]
     pagination_class = StandardResultsSetPagination

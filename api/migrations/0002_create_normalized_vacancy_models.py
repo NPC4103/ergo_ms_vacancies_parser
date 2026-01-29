@@ -57,6 +57,7 @@ class Migration(migrations.Migration):
                 'verbose_name': 'Нормализованная вакансия',
                 'verbose_name_plural': 'Нормализованные вакансии',
                 'ordering': ['-created_at'],
+                'db_table': 'vpm_vacancy',
             },
         ),
         migrations.CreateModel(
@@ -82,6 +83,7 @@ class Migration(migrations.Migration):
                 'verbose_name': 'Статистика парсинга',
                 'verbose_name_plural': 'Статистика парсинга',
                 'ordering': ['-created_at'],
+                'db_table': 'vpm_parsing_statistics',
             },
         ),
         migrations.CreateModel(
@@ -99,6 +101,7 @@ class Migration(migrations.Migration):
                 'verbose_name': 'История изменений вакансии',
                 'verbose_name_plural': 'История изменений вакансий',
                 'ordering': ['-changed_at'],
+                'db_table': 'vpm_vacancy_change_history',
             },
         ),
         migrations.AddIndex(

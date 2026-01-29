@@ -14,6 +14,9 @@ from src.core.utils.celery import CeleryModuleConfig
 class VacanciesParserCeleryConfig(CeleryModuleConfig):
     """Конфигурация Celery для модуля vacancies_parser"""
     
+    def __init__(self, module_name: str):
+        super().__init__(module_name)
+    
     def get_task_routes(self):
         """
         Маршруты задач модуля.
@@ -30,14 +33,13 @@ class VacanciesParserCeleryConfig(CeleryModuleConfig):
         
         Использует отдельную очередь 'vacancies_parser' для изоляции от других модулей.
         """
-        return [
-            Queue(
-                'vacancies_parser',
-                Exchange('vacancies_parser'),
-                routing_key='vacancies_parser',
-                queue_arguments={'x-max-priority': 10}  # Поддержка приоритетов
-            )
-        ]
+        return {
+            'vacancies_parser': {
+                'exchange': 'vacancies_parser',
+                'routing_key': 'vacancies_parser',
+                'queue_arguments': {'x-max-priority': 10}  # Поддержка приоритетов
+            }
+        }
     
     def get_task_annotations(self):
         """
@@ -57,7 +59,7 @@ class VacanciesParserCeleryConfig(CeleryModuleConfig):
                 'soft_time_limit': 7000,
                 'rate_limit': None,  # Без лимита для координаторов
             },
-            'vacancies_parser.tasks.finalize_parsing_task': {
+            'vacancies_parser.task.finalize_parsing_task': {
                 'time_limit': 300,  # 5 минут
                 'soft_time_limit': 270,
                 'rate_limit': None,
@@ -100,4 +102,4 @@ class VacanciesParserCeleryConfig(CeleryModuleConfig):
 
 
 # Экземпляр конфигурации (автоматически обнаруживается системой)
-celery_config = VacanciesParserCeleryConfig()
+# Примечание: менеджер создает экземпляр с module_name, поэтому не создаем здесь
