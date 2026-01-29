@@ -143,11 +143,21 @@ def create_parsing_task(
             # Запуск задачи
             task.start()
             
-            # Запуск координатора парсинга
-            coordinate_parsing_task.apply_async(
-                args=[task.id],
-                countdown=2
-            )
+            # Запуск координатора парсинга с обработкой ошибок брокера
+            try:
+                coordinate_parsing_task.apply_async(
+                    args=[task.id],
+                    countdown=2
+                )
+            except Exception as e:
+                error_msg = f"Не удалось запустить координатор парсинга: {str(e)}"
+                logger.warning(error_msg)
+                logger.warning(
+                    "Задача создана, но координатор не запущен. "
+                    "Запустите Celery worker и координатор запустится автоматически при следующей проверке."
+                )
+                task.error_message = error_msg
+                task.save(update_fields=['error_message', 'updated_at'])
             
             result = task.id
             metrics.record_task_success(task_id, result, task_id=task.id)
@@ -434,7 +444,11 @@ def monitor_tasks_progress():
             # Проверка завершенности
             if default_scheduler.check_task_completion(task.id):
                 logger.info(f"Task {task.id} обнаружен как завершенный, запуск финализации")
-                finalize_parsing_task.apply_async(args=[task.id])
+                try:
+                    finalize_parsing_task.apply_async(args=[task.id])
+                except Exception as e:
+                    logger.warning(f"Не удалось запустить финализацию задачи {task.id}: {e}")
+                    logger.warning("Финализация будет выполнена при следующей проверке или вручную")
         
         result = {'monitored_tasks': len(running_tasks)}
         metrics.record_task_success(task_id, result, monitored_tasks=len(running_tasks))
@@ -463,8 +477,12 @@ def resume_task(task_id: int) -> bool:
     success = default_scheduler.resume_task(task_id)
     
     if success:
-        # Перезапуск координатора
-        coordinate_parsing_task.apply_async(args=[task_id], countdown=2)
+        # Перезапуск координатора с обработкой ошибок брокера
+        try:
+            coordinate_parsing_task.apply_async(args=[task_id], countdown=2)
+        except Exception as e:
+            logger.warning(f"Не удалось запустить координатор при возобновлении задачи {task_id}: {e}")
+            logger.warning("Координатор будет запущен автоматически при следующей проверке")
     
     return success
 

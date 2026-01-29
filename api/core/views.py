@@ -18,6 +18,15 @@ from django.db.models import Q, Count
 from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework.filters import SearchFilter, OrderingFilter
 
+from rest_framework import viewsets, status
+from rest_framework.decorators import action
+from rest_framework.response import Response
+from rest_framework.permissions import IsAuthenticated
+from rest_framework.pagination import PageNumberPagination
+from django.db.models import Q, Count
+from django_filters.rest_framework import DjangoFilterBackend
+from rest_framework.filters import SearchFilter, OrderingFilter
+
 from src.core.utils.mixins import SwaggerSafeMixin
 from .models import ParsingTask, TaskItem
 from .normalized_models import NormalizedVacancy, VacancyChangeHistory, ParsingStatistics
@@ -34,6 +43,8 @@ from .serializers import (
     TaskControlSerializer,
 )
 from .scheduler import default_scheduler
+from .utils.task_runner import safe_task_run
+from .utils.celery_broker import BrokerUnavailableError
 # Импортируем задачи из корневого tasks.py модуля
 from ..tasks import pause_task, resume_task, stop_task
 
@@ -170,14 +181,27 @@ class ParsingTaskViewSet(SwaggerSafeMixin, viewsets.ModelViewSet):
         serializer.is_valid(raise_exception=True)
         
         # Запуск Celery задачи приостановки
-        pause_task.apply_async(args=[task.id])
-        
-        logger.info(f"Запущена приостановка задачи {task.id}")
-        
-        return Response({
-            'status': 'success',
-            'message': f'Задача {task.id} приостанавливается'
-        })
+        try:
+            safe_task_run(
+                pause_task.apply_async,
+                {'args': [task.id]},
+                prefer_async=True,
+                fallback_to_sync=False
+            )
+            logger.info(f"Запущена приостановка задачи {task.id}")
+            
+            return Response({
+                'status': 'success',
+                'message': f'Задача {task.id} приостанавливается'
+            })
+        except BrokerUnavailableError as e:
+            logger.error(f"Ошибка при запуске приостановки задачи {task.id}: {e}")
+            return Response({
+                'status': 'error',
+                'message': f'Не удалось запустить приостановку: {str(e)}',
+                'broker_error': True,
+                'suggestion': 'Запустите Celery worker: ergoms start-worker'
+            }, status=status.HTTP_503_SERVICE_UNAVAILABLE)
     
     @action(detail=True, methods=['post'], url_path='resume')
     def resume(self, request, pk=None):
@@ -195,14 +219,27 @@ class ParsingTaskViewSet(SwaggerSafeMixin, viewsets.ModelViewSet):
         serializer.is_valid(raise_exception=True)
         
         # Запуск Celery задачи возобновления
-        resume_task.apply_async(args=[task.id])
-        
-        logger.info(f"Запущено возобновление задачи {task.id}")
-        
-        return Response({
-            'status': 'success',
-            'message': f'Задача {task.id} возобновляется'
-        })
+        try:
+            safe_task_run(
+                resume_task.apply_async,
+                {'args': [task.id]},
+                prefer_async=True,
+                fallback_to_sync=False
+            )
+            logger.info(f"Запущено возобновление задачи {task.id}")
+            
+            return Response({
+                'status': 'success',
+                'message': f'Задача {task.id} возобновляется'
+            })
+        except BrokerUnavailableError as e:
+            logger.error(f"Ошибка при запуске возобновления задачи {task.id}: {e}")
+            return Response({
+                'status': 'error',
+                'message': f'Не удалось запустить возобновление: {str(e)}',
+                'broker_error': True,
+                'suggestion': 'Запустите Celery worker: ergoms start-worker'
+            }, status=status.HTTP_503_SERVICE_UNAVAILABLE)
     
     @action(detail=True, methods=['post'], url_path='stop')
     def stop(self, request, pk=None):
@@ -220,14 +257,27 @@ class ParsingTaskViewSet(SwaggerSafeMixin, viewsets.ModelViewSet):
         serializer.is_valid(raise_exception=True)
         
         # Запуск Celery задачи остановки
-        stop_task.apply_async(args=[task.id])
-        
-        logger.info(f"Запущена остановка задачи {task.id}")
-        
-        return Response({
-            'status': 'success',
-            'message': f'Задача {task.id} останавливается'
-        })
+        try:
+            safe_task_run(
+                stop_task.apply_async,
+                {'args': [task.id]},
+                prefer_async=True,
+                fallback_to_sync=False
+            )
+            logger.info(f"Запущена остановка задачи {task.id}")
+            
+            return Response({
+                'status': 'success',
+                'message': f'Задача {task.id} останавливается'
+            })
+        except BrokerUnavailableError as e:
+            logger.error(f"Ошибка при запуске остановки задачи {task.id}: {e}")
+            return Response({
+                'status': 'error',
+                'message': f'Не удалось запустить остановку: {str(e)}',
+                'broker_error': True,
+                'suggestion': 'Запустите Celery worker: ergoms start-worker'
+            }, status=status.HTTP_503_SERVICE_UNAVAILABLE)
     
     @action(detail=True, methods=['get'], url_path='items')
     def items(self, request, pk=None):

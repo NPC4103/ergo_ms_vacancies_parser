@@ -19,6 +19,8 @@ from modules.vacancies_parser.api.headhunter.tasks import (
     parse_vacancies_by_technologies,
     parse_vacancies_by_category
 )
+from modules.vacancies_parser.api.core.utils.task_runner import safe_task_run
+from modules.vacancies_parser.api.core.utils.celery_broker import BrokerUnavailableError
 
 logger = logging.getLogger('modules.vacancies_parser.headhunter')
 
@@ -197,7 +199,20 @@ class Command(BaseCommand):
                 logger.info(f'Запуск парсинга по категории: {category}')
                 if not quiet:
                     self.stdout.write(self.style.SUCCESS(f'Запуск парсинга по категории: {category}'))  # type: ignore[attr-defined]
-                task = parse_vacancies_by_category.delay(**task_kwargs)  # type: ignore[call-arg]
+                try:
+                    result = safe_task_run(
+                        parse_vacancies_by_category,
+                        task_kwargs,
+                        prefer_async=not sync_mode,
+                        fallback_to_sync=True
+                    )
+                    task = result if hasattr(result, 'id') else None
+                except BrokerUnavailableError as e:
+                    self.stdout.write(self.style.ERROR(f'Ошибка: {e}'))  # type: ignore[attr-defined]
+                    self.stdout.write('Решения:')
+                    self.stdout.write('  1. Запустите Celery worker: ergoms start-worker')
+                    self.stdout.write('  2. Используйте синхронный режим (--sync)')
+                    raise
             else:
                 task_kwargs = {
                     'categories': categories,
@@ -215,17 +230,35 @@ class Command(BaseCommand):
                 logger.info('Запуск парсинга по технологиям')
                 if not quiet:
                     self.stdout.write(self.style.SUCCESS('Запуск парсинга по технологиям'))  # type: ignore[attr-defined]
-                task = parse_vacancies_by_technologies.delay(**task_kwargs)  # type: ignore[call-arg]
+                try:
+                    result = safe_task_run(
+                        parse_vacancies_by_technologies,
+                        task_kwargs,
+                        prefer_async=not sync_mode,
+                        fallback_to_sync=True
+                    )
+                    task = result if hasattr(result, 'id') else None
+                except BrokerUnavailableError as e:
+                    self.stdout.write(self.style.ERROR(f'Ошибка: {e}'))  # type: ignore[attr-defined]
+                    self.stdout.write('Решения:')
+                    self.stdout.write('  1. Запустите Celery worker: ergoms start-worker')
+                    self.stdout.write('  2. Используйте синхронный режим (--sync)')
+                    raise
             
-            logger.info(f'Задача Celery отправлена: Task ID={task.id}')
-            if not quiet:
-                self.stdout.write('')
-                self.stdout.write(self.style.SUCCESS(f'{TEXT["task_sent"]}! {TEXT["task_id"]}: {task.id}'))  # type: ignore[attr-defined]
-            elif json_output:
-                self.stdout.write(json.dumps({'task_id': str(task.id), 'status': 'queued'}, ensure_ascii=False))
+            if task and hasattr(task, 'id'):
+                logger.info(f'Задача Celery отправлена: Task ID={task.id}')
+                if not quiet:
+                    self.stdout.write('')
+                    self.stdout.write(self.style.SUCCESS(f'{TEXT["task_sent"]}! {TEXT["task_id"]}: {task.id}'))  # type: ignore[attr-defined]
+                elif json_output:
+                    self.stdout.write(json.dumps({'task_id': str(task.id), 'status': 'queued'}, ensure_ascii=False))
 
-            if wait:
-                self._wait_for_task(task, ctx)
+                if wait:
+                    self._wait_for_task(task, ctx)
+            else:
+                logger.info('Задача выполнена синхронно')
+                if not quiet:
+                    self.stdout.write(self.style.WARNING('Задача выполнена синхронно (брокер недоступен)'))  # type: ignore[attr-defined]
             else:
                 if not quiet:
                     self.stdout.write('')

@@ -19,6 +19,8 @@ from .tasks import (
     parse_single_vacancy_task
 )
 from celery.result import AsyncResult
+from modules.vacancies_parser.api.core.utils.task_runner import safe_task_run
+from modules.vacancies_parser.api.core.utils.celery_broker import BrokerUnavailableError
 
 logger = logging.getLogger('modules.vacancies_parser.headhunter')
 
@@ -210,12 +212,24 @@ class VacancyViewSet(SwaggerSafeMixin, viewsets.ReadOnlyModelViewSet):
             )
         
         try:
-            task = parse_single_vacancy_task.delay(vacancy_id, force_update=force_update)
+            result = safe_task_run(
+                parse_single_vacancy_task,
+                {'vacancy_id': vacancy_id, 'force_update': force_update},
+                prefer_async=True,
+                fallback_to_sync=False
+            )
             return Response({
-                'task_id': task.id,
+                'task_id': result.id,
                 'status': 'started',
                 'message': 'Задача парсинга запущена'
             }, status=status.HTTP_202_ACCEPTED)
+        except BrokerUnavailableError as e:
+            logger.error(f'Ошибка брокера при запуске парсинга вакансии {vacancy_id}: {str(e)}')
+            return Response({
+                'error': f'Celery брокер недоступен: {str(e)}',
+                'broker_error': True,
+                'suggestion': 'Запустите Celery worker: ergoms start-worker'
+            }, status=status.HTTP_503_SERVICE_UNAVAILABLE)
         except Exception as e:
             logger.error(f'Ошибка при запуске парсинга вакансии {vacancy_id}: {str(e)}', exc_info=True)
             return Response(
@@ -281,22 +295,34 @@ class ParsingControlViewSet(SwaggerSafeMixin, viewsets.ViewSet):
         incremental = request.data.get('incremental', False)
         
         try:
-            task = parse_vacancies_by_professional_roles.delay(
-                area=area,
-                pages=pages,
-                delay=delay,
-                get_details=get_details,
-                max_concurrent_roles=max_concurrent_roles,
-                batch_size=batch_size,
-                force_refresh_roles=force_refresh_roles,
-                incremental=incremental
+            result = safe_task_run(
+                parse_vacancies_by_professional_roles,
+                {
+                    'area': area,
+                    'pages': pages,
+                    'delay': delay,
+                    'get_details': get_details,
+                    'max_concurrent_roles': max_concurrent_roles,
+                    'batch_size': batch_size,
+                    'force_refresh_roles': force_refresh_roles,
+                    'incremental': incremental
+                },
+                prefer_async=True,
+                fallback_to_sync=False
             )
             
             return Response({
-                'task_id': task.id,
+                'task_id': result.id,
                 'status': 'started',
                 'message': 'Парсинг по профессиональным ролям запущен'
             }, status=status.HTTP_202_ACCEPTED)
+        except BrokerUnavailableError as e:
+            logger.error(f'Ошибка брокера при запуске парсинга по ролям: {str(e)}')
+            return Response({
+                'error': f'Celery брокер недоступен: {str(e)}',
+                'broker_error': True,
+                'suggestion': 'Запустите Celery worker: ergoms start-worker'
+            }, status=status.HTTP_503_SERVICE_UNAVAILABLE)
         except Exception as e:
             logger.error(f'Ошибка при запуске парсинга по ролям: {str(e)}', exc_info=True)
             return Response(
@@ -320,19 +346,31 @@ class ParsingControlViewSet(SwaggerSafeMixin, viewsets.ViewSet):
             )
         
         try:
-            task = parse_vacancies_by_technologies.delay(
-                technologies=technologies,
-                area=area,
-                pages=pages,
-                delay=delay,
-                get_details=get_details
+            result = safe_task_run(
+                parse_vacancies_by_technologies,
+                {
+                    'technologies': technologies,
+                    'area': area,
+                    'pages': pages,
+                    'delay': delay,
+                    'get_details': get_details
+                },
+                prefer_async=True,
+                fallback_to_sync=False
             )
             
             return Response({
-                'task_id': task.id,
+                'task_id': result.id,
                 'status': 'started',
                 'message': 'Парсинг по технологиям запущен'
             }, status=status.HTTP_202_ACCEPTED)
+        except BrokerUnavailableError as e:
+            logger.error(f'Ошибка брокера при запуске парсинга по технологиям: {str(e)}')
+            return Response({
+                'error': f'Celery брокер недоступен: {str(e)}',
+                'broker_error': True,
+                'suggestion': 'Запустите Celery worker: ergoms start-worker'
+            }, status=status.HTTP_503_SERVICE_UNAVAILABLE)
         except Exception as e:
             logger.error(f'Ошибка при запуске парсинга по технологиям: {str(e)}', exc_info=True)
             return Response(

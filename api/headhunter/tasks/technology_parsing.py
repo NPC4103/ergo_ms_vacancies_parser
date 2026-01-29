@@ -90,13 +90,15 @@ def parse_hh_segment_by_technologies(
             generator.load_technologies(
                 categories=categories,
                 min_popularity=tech_min_popularity,
-                limit=top_n
+                limit=top_n,
+                include_aliases=use_aliases
             )
         else:
             logger.info(f'Загрузка технологий (лимит: {top_n})')
             generator.load_technologies(
                 min_popularity=tech_min_popularity,
-                limit=top_n
+                limit=top_n,
+                include_aliases=use_aliases
             )
 
         # Генерируем поисковые запросы

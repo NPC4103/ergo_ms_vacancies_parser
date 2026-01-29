@@ -6,12 +6,14 @@ import json
 import logging
 from typing import Any, Dict
 
-from django.core.management.base import BaseCommand
+from django.core.management.base import BaseCommand, CommandError
 
 from modules.vacancies_parser.api.headhunter.tasks import (
     parse_vacancies_by_technologies,
     parse_vacancies_by_category,
 )
+from modules.vacancies_parser.api.core.utils.task_runner import safe_task_run
+from modules.vacancies_parser.api.core.utils.celery_broker import BrokerUnavailableError
 
 logger = logging.getLogger('modules.vacancies_parser.headhunter')
 
@@ -175,15 +177,50 @@ class Command(BaseCommand):
         return params, task_func
 
     def _run_async(self, task_func, params: Dict[str, Any], ctx: Dict[str, Any]):
-        task = task_func.delay(**params)
-        if ctx['json_output']:
-            self.stdout.write(json.dumps({'task_id': str(task.id), 'status': 'queued'}, ensure_ascii=False))
-        elif ctx['quiet']:
-            self.stdout.write(f'Task ID: {task.id}')
-        else:
-            self.stdout.write(TEXT['queued'])
-            self.stdout.write(f'Task ID: {task.id}')
-            self.stdout.write('Проверьте статус через логи или Django shell')
+        try:
+            result = safe_task_run(
+                task_func,
+                params,
+                prefer_async=True,
+                fallback_to_sync=True
+            )
+            
+            if hasattr(result, 'id'):
+                task_id = result.id
+                if ctx['json_output']:
+                    self.stdout.write(json.dumps({'task_id': str(task_id), 'status': 'queued'}, ensure_ascii=False))
+                elif ctx['quiet']:
+                    self.stdout.write(f'Task ID: {task_id}')
+                else:
+                    self.stdout.write(TEXT['queued'])
+                    self.stdout.write(f'Task ID: {task_id}')
+                    self.stdout.write('Проверьте статус через логи или Django shell')
+            else:
+                if ctx['json_output']:
+                    self.stdout.write(json.dumps({'status': 'completed', 'result': result}, ensure_ascii=False))
+                elif ctx['quiet']:
+                    self.stdout.write('Задача выполнена синхронно')
+                else:
+                    self.stdout.write(self.style.WARNING('Брокер недоступен, задача выполнена синхронно'))
+                    self._print_results(result)
+                    
+        except BrokerUnavailableError as e:
+            error_msg = str(e)
+            if ctx['json_output']:
+                self.stdout.write(json.dumps({
+                    'error': error_msg,
+                    'suggestions': [
+                        'Запустите Celery worker: ergoms start-worker',
+                        'Используйте синхронный режим (без --async)'
+                    ]
+                }, ensure_ascii=False))
+            else:
+                self.stdout.write(self.style.ERROR(f'Ошибка: {error_msg}'))
+                self.stdout.write('')
+                self.stdout.write('Решения:')
+                self.stdout.write('  1. Запустите Celery worker: ergoms start-worker')
+                self.stdout.write('  2. Используйте синхронный режим (без --async)')
+            raise CommandError(error_msg)
 
     def _run_sync(self, task_func, params: Dict[str, Any], ctx: Dict[str, Any]):
         if not ctx['quiet'] and not ctx['json_output']:

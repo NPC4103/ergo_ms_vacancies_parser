@@ -534,8 +534,31 @@ class Command(BaseCommand):
             return
 
         # Асинхронный запуск через Celery
-        task = parse_vacancies_by_professional_roles.delay(**task_params)  # type: ignore[call-arg]
-        self._handle_async_task(task, config)
+        from modules.vacancies_parser.api.core.utils.task_runner import safe_task_run
+        from modules.vacancies_parser.api.core.utils.celery_broker import BrokerUnavailableError
+        
+        try:
+            result = safe_task_run(
+                parse_vacancies_by_professional_roles,
+                task_params,
+                prefer_async=True,
+                fallback_to_sync=True
+            )
+            
+            if hasattr(result, 'id'):
+                task = result
+                self._handle_async_task(task, config)
+            else:
+                if not config.quiet:
+                    self.stdout.write(self.style.WARNING('Брокер недоступен, задача выполнена синхронно'))  # type: ignore[attr-defined]
+                self._handle_task_result(result, config)
+        except BrokerUnavailableError as e:
+            if not config.quiet:
+                self.stdout.write(self.style.ERROR(f'Ошибка: {e}'))  # type: ignore[attr-defined]
+                self.stdout.write('Решения:')
+                self.stdout.write('  1. Запустите Celery worker: ergoms start-worker')
+                self.stdout.write('  2. Используйте синхронный режим (--sync)')
+            raise
 
     def _handle_async_task(self, task, config: ParsingConfig):
         """Обрабатывает асинхронную задачу Celery."""

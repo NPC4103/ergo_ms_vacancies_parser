@@ -38,7 +38,7 @@ class TechnologySearchGenerator:
         Args:
             categories (List[str]): Список категорий для фильтрации (LANG, FRAMEWORK и т.д.)
             min_popularity (int): Минимальная популярность технологии
-            include_aliases (bool): Включать ли алиасы в результат
+            include_aliases (bool): Включать ли алиасы в результат (используется для логирования)
             limit (int): Ограничение количества технологий
         
         Returns:
@@ -64,14 +64,24 @@ class TechnologySearchGenerator:
         if limit:
             query = query[:limit]
         
-        # Загружаем алиасы если требуется
-        if include_aliases:
-            query = query.prefetch_related('aliases')
+        # Всегда используем prefetch_related для оптимизации загрузки алиасов
+        # Это позволяет избежать N+1 запросов при работе с алиасами
+        query = query.prefetch_related('aliases')
         
         self.technologies = list(query)
         self.loaded = True
         
+        # Подсчитываем общее количество алиасов для логирования
+        total_aliases = sum(
+            len(tech._prefetched_objects_cache.get('aliases', []))
+            if hasattr(tech, '_prefetched_objects_cache') 
+            else tech.aliases.count()
+            for tech in self.technologies
+        )
+        
         logger.info(f'Загружено {len(self.technologies)} технологий')
+        if include_aliases:
+            logger.info(f'Загружено алиасов: {total_aliases}')
         
         return len(self.technologies)
     
@@ -105,8 +115,18 @@ class TechnologySearchGenerator:
             queries.append(tech.name)
             
             # Добавляем алиасы (учитываем регистр - добавляем все, даже если отличаются только регистром)
-            if use_aliases and hasattr(tech, 'aliases'):
-                for alias_obj in tech.aliases.all():
+            if use_aliases:
+                # Проверяем, были ли алиасы загружены через prefetch_related
+                # Если prefetch был выполнен, используем кэшированные данные
+                if hasattr(tech, '_prefetched_objects_cache') and 'aliases' in tech._prefetched_objects_cache:
+                    aliases_queryset = tech._prefetched_objects_cache['aliases']
+                elif hasattr(tech, 'aliases'):
+                    # Если prefetch не был выполнен, делаем запрос к БД
+                    aliases_queryset = tech.aliases.all()
+                else:
+                    aliases_queryset = []
+                
+                for alias_obj in aliases_queryset:
                     alias = alias_obj.alias
                     total_aliases_count += 1
                     # Добавляем алиас если он не совпадает с названием, или если включен флаг include_duplicate_aliases
@@ -243,7 +263,10 @@ class TechnologySearchGenerator:
             category = tech.category
             stats['by_category'][category] = stats['by_category'].get(category, 0) + 1
             
-            if hasattr(tech, 'aliases'):
+            # Подсчитываем алиасы с учетом prefetch
+            if hasattr(tech, '_prefetched_objects_cache') and 'aliases' in tech._prefetched_objects_cache:
+                stats['total_aliases'] += len(tech._prefetched_objects_cache['aliases'])
+            elif hasattr(tech, 'aliases'):
                 stats['total_aliases'] += tech.aliases.count()
         
         return stats

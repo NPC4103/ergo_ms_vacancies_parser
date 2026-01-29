@@ -153,27 +153,43 @@ class ParsingTaskCreateSerializer(serializers.Serializer):
     def create(self, validated_data):
         """Создание задачи через Celery"""
         from .tasks import create_parsing_task
+        from .utils.task_runner import safe_task_run
+        from .utils.celery_broker import BrokerUnavailableError
         
         # Получение текущего пользователя из контекста
         request = self.context.get('request')
         created_by_id = request.user.id if request and request.user.is_authenticated else None
         
-        # Запуск Celery задачи создания
-        task_result = create_parsing_task.apply_async(
-            kwargs={
-                'source': validated_data['source'],
-                'parsing_mode': validated_data['parsing_mode'],
-                'config': validated_data['config'],
-                'name': validated_data.get('name', ''),
-                'created_by_id': created_by_id,
-            }
-        )
-        
-        # Возвращаем task_id для отслеживания
-        return {
-            'celery_task_id': task_result.id,
-            **validated_data
+        # Параметры для задачи
+        task_kwargs = {
+            'source': validated_data['source'],
+            'parsing_mode': validated_data['parsing_mode'],
+            'config': validated_data['config'],
+            'name': validated_data.get('name', ''),
+            'created_by_id': created_by_id,
         }
+        
+        try:
+            # Запуск Celery задачи создания с обработкой ошибок брокера
+            task_result = safe_task_run(
+                create_parsing_task.apply_async,
+                {'kwargs': task_kwargs},
+                prefer_async=True,
+                fallback_to_sync=False
+            )
+            
+            # Возвращаем task_id для отслеживания
+            return {
+                'celery_task_id': task_result.id,
+                **validated_data
+            }
+        except BrokerUnavailableError as e:
+            raise serializers.ValidationError({
+                'broker': [
+                    f'Celery брокер недоступен: {str(e)}. '
+                    'Запустите Celery worker: ergoms start-worker'
+                ]
+            })
 
 
 class TaskItemSerializer(serializers.ModelSerializer):
