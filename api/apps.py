@@ -22,7 +22,7 @@ class VacanciesParserConfig(AppConfig):
         
         # Импорт задач для гарантированной регистрации в Celery
         # Задачи должны быть импортированы, чтобы Celery их обнаружил через autodiscover_tasks
-        from .core import tasks as core_tasks  # noqa: F401
+        from . import tasks  # noqa: F401
         
         # Логируем итоговое состояние регистрации только один раз
         # (Django может создавать несколько экземпляров AppConfig)
