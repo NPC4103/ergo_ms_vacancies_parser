@@ -117,68 +117,25 @@ def parse_hh_segment_by_technologies(
                 'search_queries_count': 0
             }
 
-        # Парсим вакансии для сегмента с автоматическим разделением при необходимости
+        # Парсим вакансии для сегмента с автоматической рекурсивной сегментацией
         logger.info(f'Запуск парсинга {len(search_queries)} запросов для сегмента {date_from}-{date_to}')
 
-        # Проверяем количество вакансий для первого запроса
-        start_date = datetime.fromisoformat(date_from.replace('T', ' '))
-        end_date = datetime.fromisoformat(date_to.replace('T', ' '))
-
-        # Если сегмент больше 1 дня, проверяем на превышение лимита
-        segment_days = (end_date - start_date).days
-        if segment_days > 1:
-            # Проверяем примерное количество вакансий по первому запросу
-            sample_result = parser.search_vacancies(
-                text=search_queries[0] if search_queries else 'программист',
-                area=area,
-                per_page=1,
-                page=0,
-                date_from=date_from,
-                date_to=date_to
-            )
-
-            if sample_result and 'found' in sample_result:
-                estimated_total = sample_result['found']
-                # Если больше 1500 вакансий на запрос, разделяем сегмент
-                if estimated_total > 1500:
-                    logger.warning(f'Сегмент {date_from}-{date_to} содержит ~{estimated_total} вакансий, '
-                                 f'разделяем на меньшие части')
-                    result = _split_segment_and_parse(
-                        search_queries, start_date, end_date, area, pages, delay, get_details,
-                        parser, date_from, date_to
-                    )
-                else:
-                    result = parse_vacancies_by_text(
-                        text_list=search_queries,
-                        area=area,
-                        pages=pages,
-                        delay=delay,
-                        get_details=get_details,
-                        date_from=date_from,
-                        date_to=date_to
-                    )
-            else:
-                # Если не можем проверить, парсим как есть
-                result = parse_vacancies_by_text(
-                    text_list=search_queries,
-                    area=area,
-                    pages=pages,
-                    delay=delay,
-                    get_details=get_details,
-                    date_from=date_from,
-                    date_to=date_to
-                )
-        else:
-            # Для сегментов в 1 день парсим напрямую
-            result = parse_vacancies_by_text(
-                text_list=search_queries,
-                area=area,
-                pages=pages,
-                delay=delay,
-                get_details=get_details,
-                date_from=date_from,
-                date_to=date_to
-            )
+        # Используем рекурсивную сегментацию из date_parsing
+        from .date_parsing import parse_date_range_recursive
+        
+        start_date = datetime.fromisoformat(date_from.replace('T', ' ')).date()
+        end_date = datetime.fromisoformat(date_to.replace('T', ' ')).date()
+        
+        result = parse_date_range_recursive(
+            search_queries=search_queries,
+            date_from=start_date,
+            date_to=end_date,
+            area=area,
+            pages=pages,
+            delay=delay,
+            get_details=get_details,
+            max_depth=3
+        )
 
         # Добавляем информацию о сегменте
         result.update({
@@ -205,51 +162,38 @@ def parse_hh_segment_by_technologies(
 
 def _split_segment_and_parse(search_queries, start_date, end_date, area, pages, delay, get_details,
                            parser, orig_date_from, orig_date_to):
-    """Разделяет сегмент на меньшие части при превышении лимита вакансий"""
-    from datetime import timedelta
-
-    # Разделяем на 2 равные части
-    mid_date = start_date + (end_date - start_date) / 2
-
-    logger.info(f'Разделение сегмента {orig_date_from}-{orig_date_to} на: '
-               f'{start_date.date()}-{mid_date.date()} и {mid_date.date()}-{end_date.date()}')
-
-    # Парсим первую половину
-    result1 = parse_vacancies_by_text(
-        text_list=search_queries,
+    """
+    Разделяет сегмент на меньшие части при превышении лимита вакансий.
+    
+    Использует рекурсивную сегментацию из date_parsing для оптимального разбиения.
+    """
+    from .date_parsing import parse_date_range_recursive
+    
+    # Преобразуем datetime в date если нужно
+    if isinstance(start_date, datetime):
+        start_date = start_date.date()
+    if isinstance(end_date, datetime):
+        end_date = end_date.date()
+    
+    logger.info(f'Рекурсивная сегментация сегмента {orig_date_from}-{orig_date_to}')
+    
+    # Используем рекурсивную сегментацию
+    result = parse_date_range_recursive(
+        search_queries=search_queries,
+        date_from=start_date,
+        date_to=end_date,
         area=area,
         pages=pages,
         delay=delay,
         get_details=get_details,
-        date_from=start_date.isoformat(),
-        date_to=mid_date.isoformat()
+        max_depth=3
     )
-
-    # Парсим вторую половину
-    result2 = parse_vacancies_by_text(
-        text_list=search_queries,
-        area=area,
-        pages=pages,
-        delay=delay,
-        get_details=get_details,
-        date_from=mid_date.isoformat(),
-        date_to=end_date.isoformat()
-    )
-
-    # Объединяем результаты
-    combined_result = {
-        'total_vacancies': result1.get('total_vacancies', 0) + result2.get('total_vacancies', 0),
-        'new_vacancies': result1.get('new_vacancies', 0) + result2.get('new_vacancies', 0),
-        'updated_vacancies': result1.get('updated_vacancies', 0) + result2.get('updated_vacancies', 0),
-        'total_in_db': max(result1.get('total_in_db', 0), result2.get('total_in_db', 0)),
-        'segment_split': True,
-        'sub_segments': [
-            f'{start_date.date()}_{mid_date.date()}',
-            f'{mid_date.date()}_{end_date.date()}'
-        ]
-    }
-
-    return combined_result
+    
+    # Добавляем информацию о разделении для обратной совместимости
+    result['segment_split'] = True
+    result['sub_segments'] = result.get('segments', [])
+    
+    return result
 
 
 @shared_task(

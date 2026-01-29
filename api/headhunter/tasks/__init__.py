@@ -55,6 +55,13 @@ from .time_period_parsing import (
     _process_single_segment_celery,
     _fetch_segment_vacancies_data_celery,
 )
+from .daily_parsing import (
+    parse_daily_vacancies_yesterday_today,
+)
+from .monthly_parsing import (
+    parse_monthly_vacancies_recursive,
+    _parse_single_day_recursive,
+)
 
 __all__ = [
     # Base
@@ -95,4 +102,9 @@ __all__ = [
     '_process_segments_parallel_celery',
     '_process_single_segment_celery',
     '_fetch_segment_vacancies_data_celery',
+    # Daily parsing
+    'parse_daily_vacancies_yesterday_today',
+    # Monthly parsing
+    'parse_monthly_vacancies_recursive',
+    '_parse_single_day_recursive',
 ]

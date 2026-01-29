@@ -78,6 +78,23 @@ class HeadhunterCeleryConfig(VacanciesParserCeleryConfigBase):
                 'soft_time_limit': 900,
                 'rate_limit': '60/h',
             },
+            # Daily parsing - ежедневный парсинг за вчера и сегодня
+            'modules.vacancies_parser.api.headhunter.tasks.parse_daily_vacancies_yesterday_today': {
+                'time_limit': 18000,  # Таймаут 5 часов
+                'soft_time_limit': 14400,  # Мягкий таймаут 4 часа
+                # rate_limit не нужен - задача управляется через Beat расписание (1 раз в день)
+            },
+            # Monthly parsing - месячный парсинг с рекурсивной сегментацией
+            'modules.vacancies_parser.api.headhunter.tasks.parse_monthly_vacancies_recursive': {
+                'time_limit': 36000,  # Таймаут 10 часов
+                'soft_time_limit': 28800,  # Мягкий таймаут 8 часов
+                # rate_limit не нужен - задача управляется через Beat расписание (1 раз в месяц)
+            },
+            'modules.vacancies_parser.api.headhunter.tasks._parse_single_day_recursive': {
+                'time_limit': 9000,   # Таймаут 2.5 часа на день
+                'soft_time_limit': 7200,  # Мягкий таймаут 2 часа
+                'rate_limit': '50/h',  # Максимум 50 дней в час (для параллельной обработки)
+            },
         }
     
     def get_module_loggers(self) -> Dict[str, Any]:
