@@ -497,15 +497,11 @@ onMounted(async () => {
 async function loadSources() {
   try {
     const response = await tasksApi.getSources()
-    
-    console.log('Sources API response:', response) // DEBUG
-    
+
     // handleResponse возвращает { data: ..., success: ..., message: ... }
     // Поэтому нужно брать response.data, а не response
     const sourcesData = response.data || response
-    
-    console.log('Sources data:', sourcesData) // DEBUG
-    
+
     // Проверяем что sourcesData и sourcesData.sources существуют
     if (!sourcesData || !sourcesData.sources || !Array.isArray(sourcesData.sources)) {
       console.error('Invalid sources response:', sourcesData)
@@ -524,8 +520,6 @@ async function loadSources() {
           label: mode.name
         }))
     }))
-    
-    console.log('Loaded sources:', sources.value) // DEBUG
   } catch (error) {
     console.error('Error loading sources:', error)
     toast.error('Ошибка загрузки источников: ' + (error.message || 'Неизвестная ошибка'))

@@ -1,101 +1,130 @@
 """
-HTML парсеры для HeadHunter, Habr Career, SuperJob.
-
-Используют BeautifulSoup для парсинга HTML страниц.
-Включают anti-bot механизмы и proxy support.
+HTML парсеры для HeadHunter, Habr Career и SuperJob.
 """
 
 import logging
-import requests
 import time
-import random
 from typing import Dict, Any, List, Optional
-from datetime import datetime
-from django.utils import timezone
+
+import requests
 from bs4 import BeautifulSoup
 
-from .base import (
-    BaseParser,
-    ParserFactory,
-    ParserError,
-    BlockedError,
-    NetworkError,
-    ValidationError
-)
+from .base import BaseParser, ParserFactory, ParserError, NetworkError, BlockedError
 
 logger = logging.getLogger('celery.module.vacancies_parser')
 
 
 class BaseHTMLParser(BaseParser):
     """
-    Базовый класс для HTML парсеров с anti-bot механизмами.
-    """
+    Базовый класс для HTML парсеров.
     
-    USER_AGENTS = [
-        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:121.0) Gecko/20100101 Firefox/121.0',
-        'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.2 Safari/605.1.15',
-        'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-    ]
+    Предоставляет общие методы для работы с HTML:
+    - HTTP запросы с retry логикой
+    - Парсинг HTML через BeautifulSoup
+    - Построение URL для поиска
+    """
     
     def __init__(self, source: str, parsing_mode: str = 'html', *args, **kwargs):
         super().__init__(source=source, parsing_mode=parsing_mode, *args, **kwargs)
         self.session = requests.Session()
-        self._update_user_agent()
-    
-    def parse_item(self, item_id: str, url: str) -> Dict[str, Any]:
-        """
-        Парсинг одного элемента (реализация интерфейса ParserInterface).
-        
-        Вызывает fetch_item с конфигом по умолчанию для совместимости с worker'ами.
-        """
-        return self.fetch_item(item_id, {})
-    
-    def _update_user_agent(self):
-        """Обновляет User-Agent на случайный."""
-        user_agent = random.choice(self.USER_AGENTS)
         self.session.headers.update({
-            'User-Agent': user_agent,
-            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-            'Accept-Language': 'ru-RU,ru;q=0.9,en-US;q=0.8,en;q=0.7',
-            'Accept-Encoding': 'gzip, deflate, br',
-            'Connection': 'keep-alive',
-            'Upgrade-Insecure-Requests': '1',
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
         })
     
-    def _make_request(self, url: str, **kwargs) -> requests.Response:
+    def _make_request(self, url: str) -> requests.Response:
         """
-        Выполняет HTTP запрос с обработкой ошибок и задержками.
+        Выполняет HTTP GET запрос с retry логикой.
+        
+        Args:
+            url: URL для запроса
+            
+        Returns:
+            requests.Response: Объект ответа
+            
+        Raises:
+            NetworkError: При сетевых ошибках после всех попыток
+            BlockedError: При блокировке (403, капча)
         """
-        try:
-            # Случайная задержка для имитации человеческого поведения
-            delay = random.uniform(0.5, 2.0)
-            time.sleep(delay)
+        last_error = None
+        
+        for attempt in range(self.max_retries):
+            try:
+                response = self.session.get(url, timeout=self.timeout)
+                
+                # Проверка на блокировку
+                if response.status_code == 403:
+                    raise BlockedError(f"Доступ запрещён (403) для {url}")
+                
+                # Проверка на капчу (базовая проверка)
+                if 'captcha' in response.text.lower() or 'captcha' in response.url.lower():
+                    raise BlockedError(f"Обнаружена капча для {url}")
+                
+                # Успешный ответ
+                if response.status_code == 200:
+                    return response
+                
+                # Другие HTTP ошибки
+                response.raise_for_status()
+                
+            except BlockedError:
+                raise
+            except requests.Timeout as e:
+                last_error = e
+                self.logger.warning(f"Таймаут запроса {url} (попытка {attempt + 1}/{self.max_retries})")
+            except requests.HTTPError as e:
+                last_error = e
+                self.logger.warning(f"HTTP ошибка {e.response.status_code} для {url} (попытка {attempt + 1}/{self.max_retries})")
+            except requests.RequestException as e:
+                last_error = e
+                self.logger.warning(f"Ошибка запроса {url} (попытка {attempt + 1}/{self.max_retries}): {e}")
             
-            response = self.session.get(url, timeout=30, **kwargs)
-            
-            # Проверка на блокировку
-            if response.status_code == 403:
-                raise BlockedError(f"Доступ запрещен (403) для {url}")
-            elif response.status_code == 429:
-                raise BlockedError(f"Превышен лимит запросов (429) для {url}")
-            elif response.status_code == 503:
-                raise NetworkError(f"Сервис недоступен (503) для {url}")
-            
-            response.raise_for_status()
-            return response
-            
-        except requests.exceptions.Timeout as e:
-            raise NetworkError(f"Таймаут при запросе к {url}: {e}")
-        except requests.exceptions.ConnectionError as e:
-            raise NetworkError(f"Ошибка соединения с {url}: {e}")
-        except requests.exceptions.RequestException as e:
-            raise ParserError(f"Ошибка HTTP запроса к {url}: {e}")
+            # Exponential backoff перед следующей попыткой
+            if attempt < self.max_retries - 1:
+                delay = min(2 ** attempt, 10)  # Максимум 10 секунд
+                time.sleep(delay)
+        
+        # Все попытки исчерпаны
+        raise NetworkError(f"Не удалось выполнить запрос {url} после {self.max_retries} попыток: {last_error}")
     
-    def _parse_html(self, html: str) -> BeautifulSoup:
-        """Парсит HTML с помощью BeautifulSoup."""
-        return BeautifulSoup(html, 'html.parser')
+    def _parse_html(self, html_text: str) -> BeautifulSoup:
+        """
+        Парсит HTML текст через BeautifulSoup.
+        
+        Args:
+            html_text: HTML текст для парсинга
+            
+        Returns:
+            BeautifulSoup: Объект BeautifulSoup
+        """
+        return BeautifulSoup(html_text, 'html.parser')
+    
+    def _build_search_url(self, config: Dict[str, Any], page: int, items_per_page: Optional[int] = None) -> str:
+        """
+        Базовый метод для построения URL поиска.
+        
+        Может быть переопределен в дочерних классах для специфичной логики.
+        
+        Args:
+            config: Конфигурация поиска
+            page: Номер страницы
+            items_per_page: Количество элементов на странице (опционально)
+            
+        Returns:
+            str: URL для поиска
+        """
+        raise NotImplementedError("Метод должен быть переопределен в дочернем классе")
+    
+    def discover_items(self, config: Dict[str, Any]) -> List[Dict[str, str]]:
+        """Обнаружение элементов для парсинга (должен быть переопределен)."""
+        raise NotImplementedError("Метод должен быть переопределен в дочернем классе")
+    
+    def parse_item(self, item_id: str, url: str) -> Dict[str, Any]:
+        """Парсинг элемента (должен быть переопределен)."""
+        raise NotImplementedError("Метод должен быть переопределен в дочернем классе")
+    
+    def fetch_item(self, item_id: str, config: Dict[str, Any]) -> Dict[str, Any]:
+        """Получение детальной информации об элементе (должен быть переопределен)."""
+        raise NotImplementedError("Метод должен быть переопределен в дочернем классе")
 
 
 class HeadHunterHTMLParser(BaseHTMLParser):

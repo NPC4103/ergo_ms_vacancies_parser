@@ -49,16 +49,12 @@ export function useParsingTasks() {
         search: filters.value.search,
         ...params
       })
-      
-      console.log('Tasks API response:', response) // DEBUG
-      
+
       // handleResponse возвращает { data: ..., success: ..., message: ... }
       const data = response.data || response
       tasks.value = data.results || []
       pagination.value.total = data.count || 0
-      
-      console.log('Loaded tasks:', tasks.value.length) // DEBUG
-      
+
       return response
     } catch (err) {
       console.error('Error loading tasks:', err) // DEBUG

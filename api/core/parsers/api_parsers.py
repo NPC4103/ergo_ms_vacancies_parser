@@ -355,20 +355,33 @@ class HabrCareerAPIParser(BaseParser):
         """
         Обнаружение вакансий через Habr Career.
         
-        Note: Реализация зависит от доступных endpoints.
-        Требуется адаптация под реальные API Habr.
+        Note: На данный момент официальный стабильный API Habr Career
+        не используется. Для Habr Career рекомендуется HTML режим.
         """
-        self.logger.warning("HabrCareerAPIParser.discover_items требует адаптации под реальный API")
-        return []
+        message = (
+            "API режим для Habr Career временно недоступен. "
+            "Используйте HTML режим парсинга."
+        )
+        self.logger.warning(message)
+        raise ValidationError(message)
     
     def parse_item(self, item_id: str, url: str) -> Dict[str, Any]:
         """Парсинг одной вакансии Habr Career"""
-        self.logger.warning("HabrCareerAPIParser.parse_item требует адаптации под реальный API")
-        raise NotImplementedError("HabrCareerAPIParser требует доработки")
+        message = (
+            "API режим для Habr Career временно недоступен. "
+            "Используйте HTML режим парсинга."
+        )
+        self.logger.warning(message)
+        raise ValidationError(message)
     
     def _normalize_vacancy_data(self, raw_data: Dict[str, Any]) -> Dict[str, Any]:
         """Нормализация данных Habr Career"""
-        raise NotImplementedError
+        message = (
+            "Нормализация данных для Habr Career API не реализована, "
+            "так как API режим временно недоступен."
+        )
+        self.logger.warning(message)
+        raise ValidationError(message)
 
 
 class SuperJobAPIParser(BaseParser):
@@ -404,23 +417,39 @@ class SuperJobAPIParser(BaseParser):
         """
         Обнаружение вакансий через SuperJob API.
         
-        Note: Реализация зависит от доступа к SuperJob API.
+        Note: Для работы SuperJob API требуется действующий API ключ. "
+        "На данный момент API режим не используется. "
+        "Рекомендуется HTML режим парсинга."
         """
-        self.logger.warning("SuperJobAPIParser.discover_items требует API ключ и адаптацию")
-        return []
+        message = (
+            "API режим для SuperJob временно недоступен. "
+            "Используйте HTML режим парсинга."
+        )
+        self.logger.warning(message)
+        raise ValidationError(message)
     
     def parse_item(self, item_id: str, url: str) -> Dict[str, Any]:
         """Парсинг одной вакансии SuperJob"""
-        self.logger.warning("SuperJobAPIParser.parse_item требует API ключ и адаптацию")
-        raise NotImplementedError("SuperJobAPIParser требует доработки")
+        message = (
+            "API режим для SuperJob временно недоступен. "
+            "Используйте HTML режим парсинга."
+        )
+        self.logger.warning(message)
+        raise ValidationError(message)
     
     def _normalize_vacancy_data(self, raw_data: Dict[str, Any]) -> Dict[str, Any]:
         """Нормализация данных SuperJob"""
-        raise NotImplementedError
+        message = (
+            "Нормализация данных для SuperJob API не реализована, "
+            "так как API режим временно недоступен."
+        )
+        self.logger.warning(message)
+        raise ValidationError(message)
 
 
-# Регистрация парсеров в фабрике при импорте модуля
-# Регистрация происходит автоматически, дублирование предотвращается в ParserFactory.register()
+# Регистрация парсеров в фабрике при импорте модуля.
+# На данный момент в продакшене используется только HeadHunter API.
+# Для Habr Career и SuperJob рекомендуется HTML режим, поэтому их API
+# парсеры намеренно не регистрируются, чтобы режимы не помечались
+# доступными в интерфейсе.
 ParserFactory.register('headhunter', 'api', HeadHunterAPIParser)
-ParserFactory.register('habr_career', 'api', HabrCareerAPIParser)
-ParserFactory.register('superjob', 'api', SuperJobAPIParser)

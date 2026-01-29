@@ -275,16 +275,12 @@ async function loadVacancies() {
     })
     
     const response = await vacanciesApi.list(params)
-    
-    console.log('Vacancies API response:', response) // DEBUG
-    
+
     // handleResponse возвращает { data: ..., success: ..., message: ... }
     const data = response.data || response
     vacancies.value = data.results || []
     totalCount.value = data.count || 0
-    
-    console.log('Loaded vacancies:', vacancies.value.length) // DEBUG
-    
+
   } catch (error) {
     console.error('Error loading vacancies:', error)
     toast.error('Ошибка загрузки вакансий')
