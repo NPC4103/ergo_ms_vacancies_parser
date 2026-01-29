@@ -1,12 +1,12 @@
 <template>
-  <div class="task-progress">
-    <div class="d-flex justify-content-between align-items-center mb-1">
-      <span class="small text-muted">Прогресс</span>
-      <span class="small fw-bold">{{ task.progress_percent }}%</span>
+  <div class="vp-task-progress">
+    <div class="vp-progress-header">
+      <span class="vp-progress-label">Прогресс</span>
+      <span class="vp-progress-value">{{ task.progress_percent }}%</span>
     </div>
-    <div class="progress" style="height: 8px;">
+    <div class="vp-progress-bar">
       <div 
-        class="progress-bar" 
+        class="vp-progress-fill" 
         :class="getProgressBarClass()"
         :style="{ width: task.progress_percent + '%' }"
         role="progressbar"
@@ -15,7 +15,7 @@
         aria-valuemax="100"
       ></div>
     </div>
-    <div class="small text-muted mt-1">
+    <div class="vp-progress-info">
       {{ task.completed_items }} / {{ task.total_items }}
     </div>
   </div>
@@ -33,25 +33,18 @@ const props = defineProps({
 
 function getProgressBarClass() {
   if (props.task.status === 'completed') {
-    return 'bg-success'
+    return 'vp-progress-success'
   } else if (props.task.status === 'failed') {
-    return 'bg-danger'
+    return 'vp-progress-danger'
   } else if (props.task.status === 'paused') {
-    return 'bg-warning'
+    return 'vp-progress-warning'
   } else if (props.task.status === 'running') {
-    return 'bg-primary progress-bar-animated progress-bar-striped'
+    return 'vp-progress-primary vp-progress-animated'
   }
-  return 'bg-secondary'
+  return 'vp-progress-secondary'
 }
 </script>
 
-<style scoped>
-.progress {
-  border-radius: 4px;
-  overflow: hidden;
-}
-
-.progress-bar {
-  transition: width 0.6s ease;
-}
+<style lang="scss" scoped>
+@import '../scss/components/task-progress';
 </style>

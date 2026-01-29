@@ -1,11 +1,23 @@
 {
   "menuSections": [
     {
-      "icon": "FileText",
-      "routeName": "VacanciesParser",
-      "name": "Парсинг вакансий",
-      "parentRoute": null,
-      "children": []
+      "icon": "BarChart3",
+      "routeName": "VacanciesParserMain",
+      "title": "Парсинг вакансий",
+      "list": [
+        {
+          "routeName": "VacanciesDashboard",
+          "name": "Панель управления"
+        },
+        {
+          "routeName": "VacanciesParser",
+          "name": "Задачи парсинга"
+        },
+        {
+          "routeName": "VacanciesParserResults",
+          "name": "Результаты"
+        }
+      ]
     }
   ]
 }

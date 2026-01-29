@@ -1,0 +1,275 @@
+// Стили страницы Dashboard
+
+@import '../variables';
+@import '../mixins';
+@import '../base';
+
+.#{$vp-prefix}dashboard {
+  .#{$vp-prefix}dashboard-header {
+    @include vp-flex(row, $vp-spacing-md, flex-start, space-between);
+    margin-bottom: $vp-spacing-xl;
+
+    @include vp-mobile {
+      flex-direction: column;
+      align-items: stretch;
+    }
+
+    .#{$vp-prefix}dashboard-title {
+      @extend .#{$vp-prefix}title;
+    }
+
+    .#{$vp-prefix}dashboard-subtitle {
+      @extend .#{$vp-prefix}subtitle;
+    }
+
+    .#{$vp-prefix}dashboard-actions {
+      @include vp-flex(row, $vp-spacing-sm, center, flex-end);
+      flex-shrink: 0;
+
+      @include vp-mobile {
+        justify-content: space-between;
+        width: 100%;
+      }
+    }
+
+    .#{$vp-prefix}btn-create,
+    .#{$vp-prefix}btn-create-empty {
+      @include vp-button('primary');
+    }
+
+    .#{$vp-prefix}btn-refresh {
+      @include vp-flex(row, 0, center, center);
+      width: 40px;
+      height: 40px;
+      padding: 0;
+      border: 1px solid $vp-border-color;
+      border-radius: $vp-border-radius-sm;
+      background: $vp-bg-primary;
+      color: $vp-text-secondary;
+      cursor: pointer;
+      transition: all $vp-transition-base;
+
+      &:hover:not(:disabled) {
+        background: $vp-primary-var;
+        color: white;
+        border-color: $vp-primary-var;
+        transform: rotate(90deg);
+      }
+
+      &:disabled {
+        opacity: 0.6;
+        cursor: not-allowed;
+      }
+
+      &.#{$vp-prefix}loading {
+        animation: vp-spin 1s linear infinite;
+      }
+    }
+  }
+
+  .#{$vp-prefix}stats-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    gap: $vp-spacing-lg;
+    margin-bottom: $vp-spacing-xxl;
+
+    @include vp-mobile {
+      grid-template-columns: 1fr;
+      gap: $vp-spacing-md;
+    }
+  }
+
+  .#{$vp-prefix}stat-card {
+    @include vp-stat-card($vp-gradient-primary);
+  }
+
+  .#{$vp-prefix}section {
+    margin-bottom: $vp-spacing-xxl;
+
+    &:last-child {
+      margin-bottom: 0;
+    }
+
+    .#{$vp-prefix}section-header {
+      @include vp-section-header;
+
+      .#{$vp-prefix}section-title-group {
+        @include vp-flex(row, $vp-spacing-sm, center, flex-start);
+
+        h3 {
+          @extend .#{$vp-prefix}heading;
+          margin: 0;
+        }
+
+        .badge {
+          font-size: $vp-font-size-xs;
+          padding: 0.25em 0.6em;
+        }
+      }
+
+      .#{$vp-prefix}section-link {
+        font-size: $vp-font-size-base;
+        color: $vp-primary-var;
+        text-decoration: none;
+        font-weight: $vp-font-weight-medium;
+        transition: color $vp-transition-base;
+
+        &:hover {
+          color: $vp-primary-dark-var;
+          text-decoration: underline;
+        }
+      }
+    }
+  }
+
+  .#{$vp-prefix}tasks-list {
+    @include vp-flex(column, $vp-spacing-md, stretch, flex-start);
+  }
+
+  .#{$vp-prefix}task-item {
+    @include vp-task-card;
+    padding: $vp-spacing-lg;
+    cursor: pointer;
+    @include vp-fade-in;
+
+    &.#{$vp-prefix}task-item-finished {
+      opacity: 0.9;
+
+      &:hover {
+        opacity: 1;
+      }
+    }
+
+    .#{$vp-prefix}task-item-header {
+      @include vp-flex(row, $vp-spacing-md, flex-start, space-between);
+      margin-bottom: $vp-spacing-md;
+
+      @include vp-mobile {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: $vp-spacing-sm;
+      }
+    }
+
+    .#{$vp-prefix}task-item-title-group {
+      flex: 1;
+      min-width: 0;
+
+      .#{$vp-prefix}task-item-title {
+        font-size: $vp-font-size-base;
+        font-weight: $vp-font-weight-semibold;
+        margin: 0 0 $vp-spacing-xs 0;
+        color: $vp-text-primary;
+        @include vp-truncate(1);
+      }
+
+      .#{$vp-prefix}task-item-badges {
+        @include vp-flex(row, $vp-spacing-xs, center, flex-start);
+        flex-wrap: wrap;
+        margin-top: $vp-spacing-xs;
+
+        .badge {
+          font-size: $vp-font-size-xs;
+          padding: 0.25em 0.6em;
+        }
+      }
+    }
+
+    .#{$vp-prefix}task-item-progress-value {
+      font-size: $vp-font-size-lg;
+      font-weight: $vp-font-weight-semibold;
+      color: $vp-primary-var;
+      flex-shrink: 0;
+
+      @include vp-mobile {
+        align-self: flex-end;
+      }
+    }
+
+    .#{$vp-prefix}task-item-stats {
+      @include vp-flex(row, $vp-spacing-md, center, flex-start);
+      flex-wrap: wrap;
+      margin-top: $vp-spacing-sm;
+
+      @include vp-mobile {
+        flex-direction: column;
+        gap: $vp-spacing-xs;
+      }
+    }
+
+    .#{$vp-prefix}task-item-footer {
+      margin-top: $vp-spacing-sm;
+      padding-top: $vp-spacing-sm;
+      border-top: 1px solid $vp-border-color;
+    }
+  }
+
+  .#{$vp-prefix}schedule-info {
+    @include vp-card(false);
+    padding: $vp-spacing-lg;
+
+    .#{$vp-prefix}schedule-item {
+      @include vp-flex(row, $vp-spacing-md, flex-start, flex-start);
+      padding: $vp-spacing-md;
+      border-bottom: 1px solid $vp-border-color;
+
+      &:last-child {
+        border-bottom: none;
+      }
+
+      .#{$vp-prefix}schedule-time {
+        font-size: $vp-font-size-base;
+        font-weight: $vp-font-weight-semibold;
+        color: $vp-primary;
+        min-width: 60px;
+        flex-shrink: 0;
+      }
+
+      .#{$vp-prefix}schedule-content {
+        flex: 1;
+        min-width: 0;
+
+        .#{$vp-prefix}schedule-title {
+          font-size: $vp-font-size-base;
+          font-weight: $vp-font-weight-medium;
+          color: $vp-text-primary;
+          margin-bottom: $vp-spacing-xs;
+        }
+
+        .#{$vp-prefix}schedule-description {
+          font-size: $vp-font-size-xs;
+          color: $vp-text-secondary;
+        }
+      }
+
+      .badge {
+        flex-shrink: 0;
+      }
+    }
+
+    .#{$vp-prefix}schedule-note {
+      @include vp-flex(row, $vp-spacing-xs, flex-start, flex-start);
+      margin-top: $vp-spacing-md;
+      padding: $vp-spacing-sm;
+      background: var(--bs-info-bg-subtle, #cff4fc);
+      border: 1px solid var(--bs-info-border-subtle, #b6effb);
+      border-radius: $vp-border-radius-sm;
+      font-size: $vp-font-size-sm;
+      color: var(--bs-info-text-emphasis, #055160);
+    }
+  }
+
+  .#{$vp-prefix}empty-state {
+    @include vp-empty-state;
+  }
+
+  .#{$vp-prefix}loading-state {
+    @include vp-loading-state;
+  }
+}
+
+@keyframes vp-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}

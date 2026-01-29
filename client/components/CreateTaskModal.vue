@@ -1,32 +1,34 @@
 <template>
-  <div class="modal fade show d-block" tabindex="-1" style="background-color: rgba(0,0,0,0.5);">
-    <div class="modal-dialog modal-lg modal-dialog-centered">
-      <div class="modal-content">
-        <div class="modal-header">
-          <h5 class="modal-title">
-            <Plus :size="24" class="me-2" />
+  <div class="vp-modal">
+    <div class="vp-modal-dialog">
+      <div class="vp-modal-content">
+        <div class="vp-modal-header">
+          <h5 class="vp-modal-title">
+            <Plus :size="24" />
             Создать задачу парсинга
           </h5>
-          <button type="button" class="btn-close" @click="$emit('close')"></button>
+          <button type="button" class="vp-modal-close" @click="$emit('close')">
+            <X :size="20" />
+          </button>
         </div>
         
-        <div class="modal-body">
+        <div class="vp-modal-body">
           <form @submit.prevent="handleSubmit">
             <!-- Название задачи -->
-            <div class="mb-3">
-              <label class="form-label">Название задачи</label>
+            <div class="vp-form-group">
+              <label>Название задачи</label>
               <input 
                 v-model="formData.name" 
                 type="text" 
-                class="form-control" 
+                class="vp-form-control" 
                 placeholder="Например: Парсинг Python вакансий Москва"
               >
             </div>
 
             <!-- Источник -->
-            <div class="mb-3">
-              <label class="form-label">Источник *</label>
-              <select v-model="formData.source" class="form-select" required @change="loadSourceModes">
+            <div class="vp-form-group">
+              <label>Источник *</label>
+              <select v-model="formData.source" class="vp-form-control" required @change="loadSourceModes">
                 <option value="">Выберите источник</option>
                 <option v-for="source in sources" :key="source.value" :value="source.value">
                   {{ source.label }}
@@ -35,15 +37,15 @@
             </div>
 
             <!-- Режим парсинга -->
-            <div class="mb-3">
-              <label class="form-label">Режим парсинга *</label>
-              <select v-model="formData.parsing_mode" class="form-select" required :disabled="!formData.source">
+            <div class="vp-form-group">
+              <label>Режим парсинга *</label>
+              <select v-model="formData.parsing_mode" class="vp-form-control" required :disabled="!formData.source">
                 <option value="">Выберите режим</option>
                 <option v-for="mode in availableModes" :key="mode.value" :value="mode.value">
                   {{ mode.label }}
                 </option>
               </select>
-              <div class="form-text">
+              <div class="vp-form-text">
                 API режим - быстрый и надежный. HTML режим - для случаев, когда API недоступен.
               </div>
             </div>
@@ -362,17 +364,17 @@
           </form>
         </div>
         
-        <div class="modal-footer">
-          <button type="button" class="btn btn-secondary" @click="$emit('close')">
+        <div class="vp-modal-footer">
+          <button type="button" class="vp-btn-secondary" @click="$emit('close')">
             Отмена
           </button>
           <button 
             type="button" 
-            class="btn btn-primary" 
+            class="vp-btn-primary" 
             :disabled="!isFormValid || loading"
             @click="handleSubmit"
           >
-            <span v-if="loading" class="spinner-border spinner-border-sm me-2"></span>
+            <span v-if="loading" class="vp-spinner me-2"></span>
             Создать и запустить
           </button>
         </div>
@@ -383,7 +385,7 @@
 
 <script setup>
 import { ref, computed, onMounted, watch } from 'vue'
-import { Plus, Info } from 'lucide-vue-next'
+import { Plus, Info, X } from 'lucide-vue-next'
 import { useToast } from 'vue-toastification'
 import { useParsingTasks } from '../composables/useParsingTasks'
 import { tasksApi } from '../js/api'
@@ -570,12 +572,6 @@ async function handleSubmit() {
 }
 </script>
 
-<style scoped>
-.modal {
-  display: block;
-}
-
-.card-header {
-  background-color: #f8f9fa;
-}
+<style lang="scss" scoped>
+@import '../scss/components/modal';
 </style>

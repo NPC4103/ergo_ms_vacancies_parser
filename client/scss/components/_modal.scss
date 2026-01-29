@@ -1,0 +1,155 @@
+// Стили модальных окон
+
+@import '../variables';
+@import '../mixins';
+
+.#{$vp-prefix}modal {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: $vp-z-modal;
+  padding: $vp-spacing-lg;
+  animation: vp-fadeIn $vp-transition-base;
+
+  .#{$vp-prefix}modal-dialog {
+    width: 100%;
+    max-width: 600px;
+    max-height: 90vh;
+    overflow-y: auto;
+    background: $vp-bg-primary;
+    border-radius: $vp-border-radius-lg;
+    box-shadow: $vp-shadow-lg;
+    animation: vp-slideUp $vp-transition-base;
+
+    @include vp-mobile {
+      max-width: 100%;
+      max-height: 100vh;
+      border-radius: $vp-border-radius $vp-border-radius 0 0;
+    }
+  }
+
+  .#{$vp-prefix}modal-header {
+    @include vp-flex(row, $vp-spacing-md, center, space-between);
+    padding: $vp-spacing-lg;
+    border-bottom: 1px solid $vp-border-color;
+
+    .#{$vp-prefix}modal-title {
+      @include vp-flex(row, $vp-spacing-sm, center, flex-start);
+      font-size: $vp-font-size-xl;
+      font-weight: $vp-font-weight-semibold;
+      color: $vp-text-primary;
+      margin: 0;
+    }
+
+    .#{$vp-prefix}modal-close {
+      width: 32px;
+      height: 32px;
+      padding: 0;
+      border: none;
+      background: transparent;
+      color: $vp-text-secondary;
+      cursor: pointer;
+      border-radius: $vp-border-radius-sm;
+      transition: all $vp-transition-base;
+
+      &:hover {
+        background: $vp-bg-secondary;
+        color: $vp-text-primary;
+      }
+    }
+  }
+
+  .#{$vp-prefix}modal-body {
+    padding: $vp-spacing-lg;
+  }
+
+  .#{$vp-prefix}modal-footer {
+    @include vp-flex(row, $vp-spacing-sm, center, flex-end);
+    padding: $vp-spacing-lg;
+    border-top: 1px solid $vp-border-color;
+
+    @include vp-mobile {
+      flex-direction: column-reverse;
+      gap: $vp-spacing-sm;
+
+      button {
+        width: 100%;
+      }
+    }
+  }
+}
+
+@keyframes vp-fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes vp-slideUp {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.#{$vp-prefix}form-group {
+  margin-bottom: $vp-spacing-lg;
+
+  label {
+    display: block;
+    font-size: $vp-font-size-sm;
+    font-weight: $vp-font-weight-medium;
+    color: $vp-text-primary;
+    margin-bottom: $vp-spacing-xs;
+  }
+
+  .#{$vp-prefix}form-control {
+    width: 100%;
+    padding: 0.75rem;
+    border: 1px solid $vp-border-color;
+    border-radius: $vp-border-radius-sm;
+    font-size: $vp-font-size-base;
+    background: $vp-bg-primary;
+    color: $vp-text-primary;
+    transition: all $vp-transition-base;
+
+      &:focus {
+        outline: none;
+        border-color: $vp-primary-var;
+        box-shadow: 0 0 0 3px rgba(13, 110, 253, 0.1);
+      }
+
+    &::placeholder {
+      color: $vp-text-secondary;
+    }
+  }
+
+  .#{$vp-prefix}form-text {
+    font-size: $vp-font-size-xs;
+    color: $vp-text-secondary;
+    margin-top: $vp-spacing-xs;
+  }
+}
+
+.#{$vp-prefix}form-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+  gap: $vp-spacing-lg;
+
+  @include vp-mobile {
+    grid-template-columns: 1fr;
+  }
+}

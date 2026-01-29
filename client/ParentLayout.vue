@@ -55,6 +55,8 @@ const navigationButtons = computed(() => {
 </template>
 
 <style lang="scss" scoped>
+@import './scss/main';
+
 .vacancies-parser-layout {
   .module-header {
     margin-bottom: 2rem;

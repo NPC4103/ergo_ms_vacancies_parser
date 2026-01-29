@@ -50,10 +50,38 @@ export function useParsingTasks() {
         ...params
       })
 
-      // handleResponse возвращает { data: ..., success: ..., message: ... }
-      const data = response.data || response
-      tasks.value = data.results || []
-      pagination.value.total = data.count || 0
+      // handleResponse возвращает { success: true, data: {...}, message: ... }
+      // DRF пагинация возвращает { count, next, previous, results: [...] }
+      // response.data уже содержит данные пагинации после обработки handleResponse
+      const paginatedData = response.data
+      
+      // Проверяем структуру данных
+      if (paginatedData && typeof paginatedData === 'object') {
+        // Стандартный пагинированный ответ DRF: { count, next, previous, results: [...] }
+        if (Array.isArray(paginatedData.results)) {
+          tasks.value = paginatedData.results
+          pagination.value.total = paginatedData.count || 0
+        } 
+        // Если это массив напрямую (не пагинированный ответ)
+        else if (Array.isArray(paginatedData)) {
+          tasks.value = paginatedData
+          pagination.value.total = paginatedData.length
+        }
+        // Если данные вложены глубже (двойная обертка)
+        else if (paginatedData.data && Array.isArray(paginatedData.data.results)) {
+          tasks.value = paginatedData.data.results
+          pagination.value.total = paginatedData.data.count || 0
+        }
+        else {
+          console.warn('Неожиданная структура ответа API:', paginatedData)
+          tasks.value = []
+          pagination.value.total = 0
+        }
+      } else {
+        console.warn('Некорректный формат ответа API:', paginatedData)
+        tasks.value = []
+        pagination.value.total = 0
+      }
 
       return response
     } catch (err) {

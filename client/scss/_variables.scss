@@ -1,0 +1,102 @@
+// Переменные модуля vacancies_parser
+// Расширяет базовые переменные из core
+
+@import '@/scss/_variables.scss';
+
+// Префикс модуля для классов
+$vp-prefix: 'vp-';
+
+// Цвета модуля (реальные цвета для SASS функций)
+$vp-primary: #0d6efd;
+$vp-primary-dark: #0b5ed7;
+$vp-success: #198754;
+$vp-danger: #dc3545;
+$vp-warning: #ffc107;
+$vp-info: #0dcaf0;
+$vp-secondary: #6c757d;
+
+// CSS переменные для использования в стилях
+$vp-primary-var: var(--bs-primary, #{$vp-primary});
+$vp-primary-dark-var: var(--bs-primary-dark, #{$vp-primary-dark});
+$vp-success-var: var(--bs-success, #{$vp-success});
+$vp-danger-var: var(--bs-danger, #{$vp-danger});
+$vp-warning-var: var(--bs-warning, #{$vp-warning});
+$vp-info-var: var(--bs-info, #{$vp-info});
+$vp-secondary-var: var(--bs-secondary, #{$vp-secondary});
+
+// Фоновые цвета (реальные цвета для SASS функций)
+$vp-bg-primary-color: #ffffff;
+$vp-bg-secondary-color: #f8f9fa;
+$vp-bg-light: #f8f9fa;
+
+// CSS переменные для использования в стилях
+$vp-bg-primary: var(--bs-body-bg, #{$vp-bg-primary-color});
+$vp-bg-secondary: var(--bs-secondary-bg, #{$vp-bg-secondary-color});
+
+// Цвета текста
+$vp-text-primary: var(--bs-body-color, #212529);
+$vp-text-secondary: var(--bs-secondary-color, #6c757d);
+$vp-text-muted: #6c757d;
+
+// Границы
+$vp-border-color: var(--bs-border-color, #e9ecef);
+$vp-border-radius: 12px;
+$vp-border-radius-sm: 8px;
+$vp-border-radius-lg: 16px;
+
+// Отступы
+$vp-spacing-xs: 0.25rem;
+$vp-spacing-sm: 0.5rem;
+$vp-spacing-md: 1rem;
+$vp-spacing-lg: 1.5rem;
+$vp-spacing-xl: 2rem;
+$vp-spacing-xxl: 3rem;
+
+// Размеры шрифтов
+$vp-font-size-xs: 0.75rem;
+$vp-font-size-sm: 0.875rem;
+$vp-font-size-base: 1rem;
+$vp-font-size-lg: 1.125rem;
+$vp-font-size-xl: 1.25rem;
+$vp-font-size-xxl: 1.5rem;
+$vp-font-size-title: 1.75rem;
+
+// Веса шрифтов
+$vp-font-weight-normal: 400;
+$vp-font-weight-medium: 500;
+$vp-font-weight-semibold: 600;
+$vp-font-weight-bold: 700;
+
+// Тени
+$vp-shadow-sm: 0 2px 4px rgba(0, 0, 0, 0.05);
+$vp-shadow-md: 0 4px 12px rgba(0, 0, 0, 0.08);
+$vp-shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.12);
+$vp-shadow-hover: 0 6px 16px rgba(0, 0, 0, 0.1);
+
+// Переходы
+$vp-transition-fast: 0.15s ease;
+$vp-transition-base: 0.2s ease;
+$vp-transition-slow: 0.3s ease;
+
+// Z-index слои
+$vp-z-dropdown: 1000;
+$vp-z-modal: 1050;
+$vp-z-tooltip: 1070;
+
+// Breakpoints
+$vp-breakpoint-mobile: 768px;
+$vp-breakpoint-tablet: 1024px;
+$vp-breakpoint-desktop: 1280px;
+
+// Высота элементов
+$vp-header-height: 64px;
+$vp-card-padding: 1.25rem;
+$vp-button-height: 40px;
+$vp-input-height: 40px;
+
+// Градиенты для карточек статистики
+$vp-gradient-primary: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+$vp-gradient-success: linear-gradient(135deg, #43e97b 0%, #38f9d7 100%);
+$vp-gradient-danger: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+$vp-gradient-warning: linear-gradient(135deg, #fa709a 0%, #fee140 100%);
+$vp-gradient-info: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);

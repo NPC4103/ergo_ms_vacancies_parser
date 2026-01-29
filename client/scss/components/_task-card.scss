@@ -1,0 +1,141 @@
+// Стили карточек задач
+
+@import '../variables';
+@import '../mixins';
+
+.#{$vp-prefix}task-card {
+  @include vp-task-card;
+  margin-bottom: $vp-spacing-md;
+
+  .#{$vp-prefix}task-header {
+    @include vp-flex(row, $vp-spacing-md, flex-start, space-between);
+    margin-bottom: $vp-spacing-md;
+
+    @include vp-mobile {
+      flex-direction: column;
+      align-items: flex-start;
+      gap: $vp-spacing-sm;
+    }
+  }
+
+  .#{$vp-prefix}task-title-group {
+    flex: 1;
+    min-width: 0;
+
+    .#{$vp-prefix}task-title {
+      font-size: $vp-font-size-lg;
+      font-weight: $vp-font-weight-semibold;
+      color: $vp-text-primary;
+      margin: 0 0 $vp-spacing-sm 0;
+      @include vp-truncate(2);
+
+      a {
+          color: inherit;
+          text-decoration: none;
+          transition: color $vp-transition-base;
+
+          &:hover {
+            color: $vp-primary-var;
+          }
+      }
+    }
+
+    .#{$vp-prefix}task-badges {
+      @include vp-flex(row, $vp-spacing-sm, center, flex-start);
+      flex-wrap: wrap;
+      margin-top: $vp-spacing-xs;
+    }
+  }
+
+  .#{$vp-prefix}task-actions {
+    @include vp-flex(row, $vp-spacing-xs, center, flex-end);
+    flex-shrink: 0;
+  }
+
+  .#{$vp-prefix}task-progress-section {
+    margin-bottom: $vp-spacing-md;
+  }
+
+  .#{$vp-prefix}task-stats {
+    @include vp-flex(row, $vp-spacing-lg, center, flex-start);
+    flex-wrap: wrap;
+    margin-top: $vp-spacing-md;
+
+    @include vp-mobile {
+      flex-direction: column;
+      gap: $vp-spacing-sm;
+    }
+  }
+
+  .#{$vp-prefix}task-stat {
+    @include vp-flex(row, $vp-spacing-xs, center, flex-start);
+    font-size: $vp-font-size-sm;
+    color: $vp-text-secondary;
+
+    svg {
+      flex-shrink: 0;
+    }
+  }
+
+  .#{$vp-prefix}task-footer {
+    margin-top: $vp-spacing-md;
+    padding-top: $vp-spacing-md;
+    border-top: 1px solid $vp-border-color;
+    @include vp-flex(row, $vp-spacing-md, center, space-between);
+    flex-wrap: wrap;
+
+    @include vp-mobile {
+      flex-direction: column;
+      align-items: flex-start;
+      gap: $vp-spacing-xs;
+    }
+  }
+}
+
+.#{$vp-prefix}task-item {
+  @include vp-task-card;
+  padding: $vp-spacing-lg;
+  cursor: pointer;
+
+  .#{$vp-prefix}task-item-header {
+    @include vp-flex(row, $vp-spacing-md, flex-start, space-between);
+    margin-bottom: $vp-spacing-md;
+  }
+
+  .#{$vp-prefix}task-item-title-group {
+    flex: 1;
+    min-width: 0;
+
+    .#{$vp-prefix}task-item-title {
+      font-size: $vp-font-size-base;
+      font-weight: $vp-font-weight-semibold;
+      margin: 0 0 $vp-spacing-xs 0;
+      @include vp-truncate(1);
+    }
+
+    .#{$vp-prefix}task-item-badges {
+      @include vp-flex(row, $vp-spacing-xs, center, flex-start);
+      flex-wrap: wrap;
+      margin-top: $vp-spacing-xs;
+    }
+  }
+
+    .#{$vp-prefix}task-item-progress-value {
+      font-size: $vp-font-size-lg;
+      font-weight: $vp-font-weight-semibold;
+      color: $vp-primary-var;
+      flex-shrink: 0;
+  }
+
+  .#{$vp-prefix}task-item-stats {
+    @include vp-flex(row, $vp-spacing-md, center, flex-start);
+    flex-wrap: wrap;
+    margin-top: $vp-spacing-sm;
+  }
+
+  .#{$vp-prefix}task-item-footer {
+    margin-top: $vp-spacing-sm;
+    padding-top: $vp-spacing-sm;
+    border-top: 1px solid $vp-border-color;
+  }
+}

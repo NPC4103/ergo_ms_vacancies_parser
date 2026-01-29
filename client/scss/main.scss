@@ -1,0 +1,18 @@
+// Главный файл импорта стилей модуля vacancies_parser
+
+// Базовые стили
+@import './variables';
+@import './mixins';
+@import './base';
+
+// Компоненты
+@import './components/task-card';
+@import './components/task-progress';
+@import './components/task-controls';
+@import './components/modal';
+@import './components/filters';
+
+// Страницы
+@import './pages/dashboard';
+@import './pages/tasks-list';
+@import './pages/task-detail';

@@ -1,8 +1,8 @@
 <template>
-  <div class="task-control-buttons btn-group" role="group">
+  <div class="vp-task-controls" role="group">
     <!-- Детали -->
     <button 
-      class="btn btn-sm btn-outline-primary" 
+      class="vp-btn-primary" 
       :title="'Детали'"
       @click="goToDetails"
     >
@@ -12,7 +12,7 @@
     <!-- Pause -->
     <button 
       v-if="task.status === 'running'" 
-      class="btn btn-sm btn-outline-warning" 
+      class="vp-btn-warning" 
       :title="'Приостановить'"
       @click="$emit('pause', task)"
     >
@@ -22,7 +22,7 @@
     <!-- Resume -->
     <button 
       v-if="task.status === 'paused'" 
-      class="btn btn-sm btn-outline-success" 
+      class="vp-btn-success" 
       :title="'Возобновить'"
       @click="$emit('resume', task)"
     >
@@ -32,7 +32,7 @@
     <!-- Stop -->
     <button 
       v-if="task.is_active" 
-      class="btn btn-sm btn-outline-danger" 
+      class="vp-btn-danger" 
       :title="'Остановить'"
       @click="$emit('stop', task)"
     >
@@ -42,7 +42,7 @@
     <!-- Delete -->
     <button 
       v-if="task.is_finished" 
-      class="btn btn-sm btn-outline-danger" 
+      class="vp-btn-danger" 
       :title="'Удалить'"
       @click="$emit('delete', task)"
     >
@@ -70,10 +70,6 @@ function goToDetails() {
 }
 </script>
 
-<style scoped>
-.task-control-buttons button {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-}
+<style lang="scss" scoped>
+@import '../scss/components/task-controls';
 </style>

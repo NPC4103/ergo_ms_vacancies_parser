@@ -1,393 +1,431 @@
 <script setup>
-import { ref, onMounted, computed } from 'vue'
-import { Briefcase, TrendingUp, MapPin, DollarSign, Clock, RefreshCw, Activity } from 'lucide-vue-next'
-import { useVacancies } from '../composables/useVacancies'
+import { ref, onMounted, computed, onUnmounted } from 'vue'
+import { 
+  Briefcase, TrendingUp, MapPin, DollarSign, Clock, RefreshCw, Activity,
+  Play, CheckCircle, XCircle, Loader, AlertTriangle, Plus, List, BarChart3,
+  Calendar, Info
+} from 'lucide-vue-next'
 import { useRouter } from 'vue-router'
+import { useParsingTasks } from '../composables/useParsingTasks'
+import { useToast } from 'vue-toastification'
+import TaskProgressBar from '../components/TaskProgressBar.vue'
 
 const router = useRouter()
-const { loadStats, loading } = useVacancies()
+const toast = useToast()
+
+const {
+  tasks,
+  loading: tasksLoading,
+  loadTasks,
+  activeTasks,
+  finishedTasks
+} = useParsingTasks()
 
 const stats = ref(null)
+const loading = ref(false)
+let refreshInterval = null
+
+// Статистика по задачам
+const tasksStats = computed(() => {
+  const tasksList = tasks.value || []
+  const all = tasksList.length
+  const running = tasksList.filter(t => t.status === 'running').length
+  const completed = tasksList.filter(t => t.status === 'completed').length
+  const failed = tasksList.filter(t => t.status === 'failed').length
+  const paused = tasksList.filter(t => t.status === 'paused').length
+  
+  return {
+    total: all,
+    running,
+    completed,
+    failed,
+    paused,
+    success_rate: all > 0 ? Math.round((completed / all) * 100) : 0
+  }
+})
+
+// Последние активные задачи
+const recentActiveTasks = computed(() => {
+  const tasksList = tasks.value || []
+  return tasksList
+    .filter(t => t.is_active)
+    .sort((a, b) => new Date(b.started_at || b.created_at) - new Date(a.started_at || a.created_at))
+    .slice(0, 5)
+})
+
+// Последние завершенные задачи
+const recentFinishedTasks = computed(() => {
+  const tasksList = tasks.value || []
+  return tasksList
+    .filter(t => t.is_finished)
+    .sort((a, b) => new Date(b.completed_at || b.updated_at) - new Date(a.completed_at || a.updated_at))
+    .slice(0, 5)
+})
 
 const loadDashboardData = async () => {
+  loading.value = true
   try {
-    stats.value = await loadStats()
+    // Загружаем задачи
+    await loadTasks({ page_size: 50 })
+    
+    // Загружаем статистику вакансий (если нужно)
+    // stats.value = await loadStats()
   } catch (error) {
     console.error('Ошибка загрузки данных дашборда:', error)
+    toast.error('Ошибка загрузки данных дашборда')
+  } finally {
+    loading.value = false
   }
 }
 
 const statCards = computed(() => {
-  if (!stats.value) return []
-  
   return [
     {
-      title: 'Всего вакансий',
-      value: stats.value.total_vacancies || 0,
-      icon: Briefcase,
+      title: 'Всего задач',
+      value: tasksStats.total,
+      icon: List,
       gradient: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-      link: { name: 'VacanciesList' }
+      link: { name: 'VacanciesParser' },
+      subtitle: `${tasksStats.completed} завершено`
     },
     {
-      title: 'Активных',
-      value: stats.value.active_vacancies || 0,
+      title: 'Активных задач',
+      value: tasksStats.running,
       icon: Activity,
       gradient: 'linear-gradient(135deg, #f093fb 0%, #f5576c 100%)',
-      link: { name: 'VacanciesList', query: { is_active: 'true' } }
+      link: { name: 'VacanciesParser', query: { status: 'running' } },
+      subtitle: `${tasksStats.paused} приостановлено`
     },
     {
-      title: 'Средняя зарплата',
-      value: stats.value.avg_salary_from 
-        ? `${Math.round(stats.value.avg_salary_from).toLocaleString('ru-RU')} ₽`
-        : '—',
-      icon: DollarSign,
-      gradient: 'linear-gradient(135deg, #4facfe 0%, #00f2fe 100%)',
-      link: { name: 'VacancyStats' }
-    },
-    {
-      title: 'За неделю',
-      value: stats.value.recent_vacancies_count || 0,
-      icon: Clock,
+      title: 'Успешных',
+      value: tasksStats.completed,
+      icon: CheckCircle,
       gradient: 'linear-gradient(135deg, #43e97b 0%, #38f9d7 100%)',
-      link: { name: 'VacanciesList' }
+      link: { name: 'VacanciesParser', query: { status: 'completed' } },
+      subtitle: `${tasksStats.success_rate}% успешность`
+    },
+    {
+      title: 'С ошибками',
+      value: tasksStats.failed,
+      icon: XCircle,
+      gradient: 'linear-gradient(135deg, #fa709a 0%, #fee140 100%)',
+      link: { name: 'VacanciesParser', query: { status: 'failed' } },
+      subtitle: tasksStats.failed > 0 ? 'Требуют внимания' : 'Все в порядке'
     }
   ]
 })
 
-const topCities = computed(() => {
-  if (!stats.value?.vacancies_by_city) return []
-  return Object.entries(stats.value.vacancies_by_city)
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, 5)
-    .map(([city, count]) => ({ city: city || 'Не указан', count }))
-})
+function formatDate(dateString) {
+  if (!dateString) return '-'
+  const date = new Date(dateString)
+  return date.toLocaleString('ru-RU', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit'
+  })
+}
 
-const topRoles = computed(() => {
-  if (!stats.value?.vacancies_by_role) return []
-  return Object.entries(stats.value.vacancies_by_role)
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, 5)
-    .map(([role, count]) => ({ role, count }))
-})
+function formatRelativeTime(dateString) {
+  if (!dateString) return '-'
+  const date = new Date(dateString)
+  const now = new Date()
+  const diffMs = now - date
+  const diffMins = Math.floor(diffMs / 60000)
+  const diffHours = Math.floor(diffMins / 60)
+  const diffDays = Math.floor(diffHours / 24)
+  
+  if (diffMins < 1) return 'только что'
+  if (diffMins < 60) return `${diffMins} мин назад`
+  if (diffHours < 24) return `${diffHours} ч назад`
+  if (diffDays < 7) return `${diffDays} д назад`
+  
+  return formatDate(dateString)
+}
+
+function getStatusBadgeClass(status) {
+  const classes = {
+    'created': 'bg-secondary',
+    'running': 'bg-primary',
+    'paused': 'bg-warning',
+    'stopped': 'bg-dark',
+    'completed': 'bg-success',
+    'failed': 'bg-danger'
+  }
+  return classes[status] || 'bg-secondary'
+}
+
+function getSourceBadgeClass(source) {
+  const classes = {
+    'headhunter': 'bg-danger',
+    'habr_career': 'bg-info',
+    'superjob': 'bg-success'
+  }
+  return classes[source] || 'bg-secondary'
+}
+
+function navigateToTask(taskId) {
+  router.push(`/vacancies-parser/tasks/${taskId}`)
+}
+
+function createTask() {
+  router.push({ name: 'VacanciesParser' })
+}
 
 onMounted(() => {
   loadDashboardData()
+  
+  // Auto-refresh для активных задач (каждые 10 секунд)
+  refreshInterval = setInterval(() => {
+    if (recentActiveTasks.value.length > 0 && !loading.value) {
+      loadDashboardData()
+    }
+  }, 10000)
+})
+
+onUnmounted(() => {
+  if (refreshInterval) {
+    clearInterval(refreshInterval)
+  }
 })
 </script>
 
 <template>
-  <div class="dashboard-view">
-    <div class="dashboard-header">
-      <h2 class="dashboard-title">Обзор</h2>
-      <button 
-        @click="loadDashboardData" 
-        class="btn-refresh"
-        :disabled="loading"
-        :class="{ loading: loading }"
-      >
-        <RefreshCw :size="18" />
-      </button>
+  <div class="vp-dashboard">
+    <div class="vp-dashboard-header">
+      <div>
+        <h2 class="vp-dashboard-title">Панель управления парсингом</h2>
+        <p class="vp-dashboard-subtitle">Мониторинг и управление задачами парсинга вакансий</p>
+      </div>
+      <div class="vp-dashboard-actions">
+        <button 
+          @click="createTask" 
+          class="vp-btn-create"
+        >
+          <Plus :size="18" />
+          Создать задачу
+        </button>
+        <button 
+          @click="loadDashboardData" 
+          class="vp-btn-refresh"
+          :disabled="loading"
+          :class="{ 'vp-loading': loading }"
+        >
+          <RefreshCw :size="18" />
+        </button>
+      </div>
     </div>
 
     <!-- Статистические карточки -->
-    <div class="stats-grid">
+    <div class="vp-stats-grid">
       <div 
         v-for="card in statCards" 
         :key="card.title"
-        class="stat-card"
+        class="vp-stat-card"
         @click="card.link && router.push(card.link)"
       >
-        <div class="stat-card-icon" :style="{ background: card.gradient }">
+        <div class="vp-stat-icon" :style="{ background: card.gradient }">
           <component :is="card.icon" :size="24" />
         </div>
-        <div class="stat-card-content">
-          <div class="stat-card-label">{{ card.title }}</div>
-          <div class="stat-card-value">{{ card.value }}</div>
+        <div class="vp-stat-content">
+          <div class="vp-stat-label">{{ card.title }}</div>
+          <div class="vp-stat-value">{{ card.value }}</div>
+          <div v-if="card.subtitle" class="vp-stat-subtitle">{{ card.subtitle }}</div>
         </div>
       </div>
     </div>
 
-    <!-- Дополнительная статистика -->
-    <div v-if="stats && (topCities.length > 0 || topRoles.length > 0)" class="stats-sections">
-      <div v-if="topCities.length > 0" class="stats-section">
-        <div class="stats-section-header">
-          <MapPin :size="20" />
-          <h3>Топ городов</h3>
+    <!-- Активные задачи -->
+    <div v-if="recentActiveTasks.length > 0" class="vp-section">
+      <div class="vp-section-header">
+        <div class="vp-section-title-group">
+          <Loader :size="20" class="text-primary" />
+          <h3>Активные задачи</h3>
+          <span class="badge bg-primary">{{ recentActiveTasks.length }}</span>
         </div>
-        <div class="stats-list">
-          <div 
-            v-for="(item, index) in topCities" 
-            :key="item.city"
-            class="stats-item"
-          >
-            <div class="stats-item-rank">{{ index + 1 }}</div>
-            <div class="stats-item-label">{{ item.city }}</div>
-            <div class="stats-item-value">{{ item.count }}</div>
+        <router-link 
+          :to="{ name: 'VacanciesParser', query: { status: 'running' } }" 
+          class="vp-section-link"
+        >
+          Все задачи →
+        </router-link>
+      </div>
+      <div class="vp-tasks-list">
+        <div 
+          v-for="task in recentActiveTasks" 
+          :key="task.id"
+          class="vp-task-item"
+          @click="navigateToTask(task.id)"
+        >
+          <div class="vp-task-item-header">
+            <div class="vp-task-item-title-group">
+              <h4 class="vp-task-item-title">{{ task.name || 'Задача без названия' }}</h4>
+              <div class="vp-task-item-badges">
+                <span class="badge rounded-pill" :class="getSourceBadgeClass(task.source)">
+                  {{ task.source_display }}
+                </span>
+                <span class="badge rounded-pill" :class="getStatusBadgeClass(task.status)">
+                  {{ task.status_display }}
+                </span>
+              </div>
+            </div>
+            <div class="vp-task-item-progress-value">
+              {{ task.progress_percent }}%
+            </div>
+          </div>
+          <TaskProgressBar :task="task" />
+          <div class="vp-task-item-stats">
+            <span class="vp-task-stat">
+              <CheckCircle :size="14" class="text-success" />
+              {{ task.completed_items || 0 }} выполнено
+            </span>
+            <span class="vp-task-stat">
+              <XCircle :size="14" :class="task.failed_items > 0 ? 'text-danger' : 'text-muted'" />
+              {{ task.failed_items || 0 }} ошибок
+            </span>
+            <span class="vp-task-stat">
+              <Clock :size="14" class="text-info" />
+              {{ (task.total_items || 0) - (task.completed_items || 0) - (task.failed_items || 0) }} осталось
+            </span>
+          </div>
+          <div class="vp-task-item-footer">
+            <span class="text-muted small">
+              Запущена: {{ formatRelativeTime(task.started_at || task.created_at) }}
+            </span>
           </div>
         </div>
       </div>
+    </div>
 
-      <div v-if="topRoles.length > 0" class="stats-section">
-        <div class="stats-section-header">
-          <TrendingUp :size="20" />
-          <h3>Топ ролей</h3>
+    <!-- Информация о расписании -->
+    <div class="vp-section">
+      <div class="vp-section-header">
+        <div class="vp-section-title-group">
+          <Calendar :size="20" class="text-info" />
+          <h3>Расписание автоматического парсинга</h3>
         </div>
-        <div class="stats-list">
-          <div 
-            v-for="(item, index) in topRoles" 
-            :key="item.role"
-            class="stats-item"
-          >
-            <div class="stats-item-rank">{{ index + 1 }}</div>
-            <div class="stats-item-label">{{ item.role }}</div>
-            <div class="stats-item-value">{{ item.count }}</div>
+      </div>
+      <div class="vp-schedule-info">
+        <div class="vp-schedule-item">
+          <div class="vp-schedule-time">02:00</div>
+          <div class="vp-schedule-content">
+            <div class="vp-schedule-title">Ежедневный парсинг за вчера и сегодня</div>
+            <div class="vp-schedule-description">Полный парсинг всех технологий с максимальным покрытием</div>
+          </div>
+          <span class="badge bg-danger">HeadHunter</span>
+        </div>
+        <div class="vp-schedule-item">
+          <div class="vp-schedule-time">03:00</div>
+          <div class="vp-schedule-content">
+            <div class="vp-schedule-title">Глубокое сканирование топ-40</div>
+            <div class="vp-schedule-description">Категории: языки программирования и фреймворки</div>
+          </div>
+          <span class="badge bg-danger">HeadHunter</span>
+        </div>
+        <div class="vp-schedule-item">
+          <div class="vp-schedule-time">06:15</div>
+          <div class="vp-schedule-content">
+            <div class="vp-schedule-title">Языки программирования (рабочие дни)</div>
+            <div class="vp-schedule-description">Также в 12:15 и 18:15</div>
+          </div>
+          <span class="badge bg-danger">HeadHunter</span>
+        </div>
+        <div class="vp-schedule-item">
+          <div class="vp-schedule-time">07:30</div>
+          <div class="vp-schedule-content">
+            <div class="vp-schedule-title">Фреймворки (рабочие дни)</div>
+            <div class="vp-schedule-description">Также в 13:30 и 19:30</div>
+          </div>
+          <span class="badge bg-danger">HeadHunter</span>
+        </div>
+        <div class="vp-schedule-note">
+          <Info :size="16" />
+          <span>Расписание автоматически управляется Celery Beat. Все задачи выполняются в фоновом режиме.</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Последние завершенные задачи -->
+    <div v-if="recentFinishedTasks.length > 0" class="vp-section">
+      <div class="vp-section-header">
+        <div class="vp-section-title-group">
+          <BarChart3 :size="20" class="text-success" />
+          <h3>Последние завершенные задачи</h3>
+          <span class="badge bg-success">{{ recentFinishedTasks.length }}</span>
+        </div>
+        <router-link 
+          :to="{ name: 'VacanciesParser', query: { status: 'completed' } }" 
+          class="vp-section-link"
+        >
+          Все завершенные →
+        </router-link>
+      </div>
+      <div class="vp-tasks-list">
+        <div 
+          v-for="task in recentFinishedTasks" 
+          :key="task.id"
+          class="vp-task-item vp-task-item-finished"
+          @click="navigateToTask(task.id)"
+        >
+          <div class="vp-task-item-header">
+            <div class="vp-task-item-title-group">
+              <h4 class="vp-task-item-title">{{ task.name || 'Задача без названия' }}</h4>
+              <div class="vp-task-item-badges">
+                <span class="badge rounded-pill" :class="getSourceBadgeClass(task.source)">
+                  {{ task.source_display }}
+                </span>
+                <span class="badge rounded-pill" :class="getStatusBadgeClass(task.status)">
+                  {{ task.status_display }}
+                </span>
+              </div>
+            </div>
+            <div class="vp-task-item-progress-value text-success">
+              {{ task.progress_percent }}%
+            </div>
+          </div>
+          <div class="vp-task-item-stats">
+            <span class="vp-task-stat">
+              <CheckCircle :size="14" class="text-success" />
+              {{ task.completed_items || 0 }} выполнено
+            </span>
+            <span class="vp-task-stat">
+              <XCircle :size="14" :class="task.failed_items > 0 ? 'text-danger' : 'text-muted'" />
+              {{ task.failed_items || 0 }} ошибок
+            </span>
+            <span class="vp-task-stat">
+              <Briefcase :size="14" class="text-primary" />
+              {{ task.total_items || 0 }} всего
+            </span>
+          </div>
+          <div class="vp-task-item-footer">
+            <span class="text-muted small">
+              Завершена: {{ formatRelativeTime(task.completed_at || task.updated_at) }}
+            </span>
           </div>
         </div>
       </div>
     </div>
 
     <!-- Пустое состояние -->
-    <div v-if="!loading && !stats" class="empty-state">
-      <Briefcase :size="48" class="empty-icon" />
-      <p class="empty-text">Нет данных для отображения</p>
+    <div v-if="!loading && tasksStats.total === 0" class="vp-empty-state">
+      <Briefcase :size="48" class="vp-empty-icon" />
+      <h3 class="vp-empty-title">Нет задач парсинга</h3>
+      <p class="vp-empty-text">Создайте первую задачу парсинга для начала работы</p>
+      <button @click="createTask" class="vp-btn-create-empty">
+        <Plus :size="18" />
+        Создать задачу
+      </button>
     </div>
 
     <!-- Загрузка -->
-    <div v-if="loading" class="loading-state">
-      <div class="spinner"></div>
+    <div v-if="loading && tasksStats.total === 0" class="vp-loading-state">
+      <div class="vp-spinner"></div>
+      <p class="vp-loading-text">Загрузка данных...</p>
     </div>
   </div>
 </template>
 
 <style lang="scss" scoped>
-.dashboard-view {
-  .dashboard-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 2rem;
-    
-    .dashboard-title {
-      font-size: 1.5rem;
-      font-weight: 600;
-      margin: 0;
-      color: var(--bs-body-color, #212529);
-      letter-spacing: -0.02em;
-    }
-    
-    .btn-refresh {
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      width: 40px;
-      height: 40px;
-      border: none;
-      background: var(--bs-body-bg, #fff);
-      border: 1px solid var(--bs-border-color, #e9ecef);
-      border-radius: 8px;
-      cursor: pointer;
-      transition: all 0.2s ease;
-      color: var(--bs-body-color, #6c757d);
-      
-      &:hover:not(:disabled) {
-        background: var(--bs-primary, #0d6efd);
-        color: white;
-        border-color: var(--bs-primary, #0d6efd);
-        transform: rotate(90deg);
-      }
-      
-      &:disabled {
-        opacity: 0.6;
-        cursor: not-allowed;
-      }
-      
-      &.loading {
-        animation: spin 1s linear infinite;
-      }
-    }
-  }
-  
-  .stats-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
-    gap: 1.5rem;
-    margin-bottom: 3rem;
-  }
-  
-  .stat-card {
-    display: flex;
-    align-items: center;
-    gap: 1rem;
-    padding: 1.5rem;
-    background: var(--bs-body-bg, #fff);
-    border: 1px solid var(--bs-border-color, #e9ecef);
-    border-radius: 12px;
-    cursor: pointer;
-    transition: all 0.2s ease;
-    
-    &:hover {
-      border-color: var(--bs-primary, #0d6efd);
-      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
-      transform: translateY(-2px);
-    }
-    
-    .stat-card-icon {
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      width: 48px;
-      height: 48px;
-      border-radius: 10px;
-      color: white;
-      flex-shrink: 0;
-    }
-    
-    .stat-card-content {
-      flex: 1;
-      min-width: 0;
-    }
-    
-    .stat-card-label {
-      font-size: 0.875rem;
-      color: var(--bs-secondary-color, #6c757d);
-      margin-bottom: 0.25rem;
-      font-weight: 500;
-    }
-    
-    .stat-card-value {
-      font-size: 1.5rem;
-      font-weight: 600;
-      color: var(--bs-body-color, #212529);
-      line-height: 1.2;
-    }
-  }
-  
-  .stats-sections {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-    gap: 2rem;
-  }
-  
-  .stats-section {
-    .stats-section-header {
-      display: flex;
-      align-items: center;
-      gap: 0.75rem;
-      margin-bottom: 1.5rem;
-      color: var(--bs-body-color, #212529);
-      
-      h3 {
-        font-size: 1.125rem;
-        font-weight: 600;
-        margin: 0;
-      }
-    }
-    
-    .stats-list {
-      display: flex;
-      flex-direction: column;
-      gap: 0.75rem;
-    }
-    
-    .stats-item {
-      display: flex;
-      align-items: center;
-      gap: 1rem;
-      padding: 0.875rem;
-      background: var(--bs-body-bg, #fff);
-      border: 1px solid var(--bs-border-color, #e9ecef);
-      border-radius: 8px;
-      transition: all 0.2s ease;
-      
-      &:hover {
-        border-color: var(--bs-primary, #0d6efd);
-        background: rgba(13, 110, 253, 0.02);
-      }
-      
-      .stats-item-rank {
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        width: 32px;
-        height: 32px;
-        border-radius: 6px;
-        background: var(--bs-secondary-bg, #f8f9fa);
-        color: var(--bs-secondary-color, #6c757d);
-        font-weight: 600;
-        font-size: 0.875rem;
-        flex-shrink: 0;
-      }
-      
-      .stats-item-label {
-        flex: 1;
-        font-size: 0.9375rem;
-        color: var(--bs-body-color, #212529);
-        font-weight: 500;
-        min-width: 0;
-        overflow: hidden;
-        text-overflow: ellipsis;
-        white-space: nowrap;
-      }
-      
-      .stats-item-value {
-        font-size: 0.9375rem;
-        font-weight: 600;
-        color: var(--bs-primary, #0d6efd);
-        flex-shrink: 0;
-      }
-    }
-  }
-  
-  .empty-state,
-  .loading-state {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    padding: 4rem 2rem;
-    text-align: center;
-    
-    .empty-icon {
-      color: var(--bs-secondary-color, #6c757d);
-      margin-bottom: 1rem;
-      opacity: 0.5;
-    }
-    
-    .empty-text {
-      color: var(--bs-secondary-color, #6c757d);
-      margin: 0;
-    }
-  }
-  
-  .spinner {
-    width: 40px;
-    height: 40px;
-    border: 3px solid var(--bs-border-color, #e9ecef);
-    border-top-color: var(--bs-primary, #0d6efd);
-    border-radius: 50%;
-    animation: spin 0.8s linear infinite;
-  }
-}
-
-@keyframes spin {
-  to { transform: rotate(360deg); }
-}
-
-@media (max-width: 768px) {
-  .dashboard-view {
-    .stats-grid {
-      grid-template-columns: 1fr;
-      gap: 1rem;
-    }
-    
-    .stats-sections {
-      grid-template-columns: 1fr;
-      gap: 1.5rem;
-    }
-    
-    .stat-card {
-      padding: 1.25rem;
-    }
-  }
-}
+@import '../scss/pages/dashboard';
 </style>

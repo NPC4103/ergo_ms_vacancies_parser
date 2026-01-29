@@ -1,0 +1,72 @@
+// Стили кнопок управления задачами
+
+@import '../variables';
+@import '../mixins';
+
+.#{$vp-prefix}task-controls {
+  @include vp-flex(row, $vp-spacing-xs, center, flex-end);
+
+  button {
+    @include vp-flex(row, 0, center, center);
+    width: 32px;
+    height: 32px;
+    padding: 0;
+    border: 1px solid $vp-border-color;
+    border-radius: $vp-border-radius-sm;
+    background: $vp-bg-primary;
+    color: $vp-text-secondary;
+    cursor: pointer;
+    transition: all $vp-transition-base;
+
+      &:hover {
+        background: $vp-bg-secondary;
+        border-color: $vp-primary-var;
+        color: $vp-primary-var;
+        transform: translateY(-1px);
+      }
+
+      &:active {
+        transform: translateY(0);
+      }
+
+      &.vp-btn-primary {
+        border-color: $vp-primary-var;
+        color: $vp-primary-var;
+
+        &:hover {
+          background: $vp-primary-var;
+          color: white;
+        }
+      }
+
+      &.vp-btn-success {
+        border-color: $vp-success-var;
+        color: $vp-success-var;
+
+        &:hover {
+          background: $vp-success-var;
+          color: white;
+        }
+      }
+
+      &.vp-btn-danger {
+        border-color: $vp-danger-var;
+        color: $vp-danger-var;
+
+        &:hover {
+          background: $vp-danger-var;
+          color: white;
+        }
+      }
+
+      &.vp-btn-warning {
+        border-color: $vp-warning-var;
+        color: $vp-warning-var;
+
+        &:hover {
+          background: $vp-warning-var;
+          color: white;
+        }
+      }
+  }
+}
