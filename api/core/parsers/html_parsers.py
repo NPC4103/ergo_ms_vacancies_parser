@@ -5,9 +5,11 @@ HTML парсеры для HeadHunter, Habr Career и SuperJob.
 import logging
 import time
 from typing import Dict, Any, List, Optional
+from datetime import datetime
 
 import requests
 from bs4 import BeautifulSoup
+from django.utils import timezone
 
 from .base import BaseParser, ParserFactory, ParserError, NetworkError, BlockedError
 

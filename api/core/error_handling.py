@@ -26,12 +26,13 @@ class ErrorType(Enum):
 
 
 # Импортируем классы ошибок из parsers.base
-from ..parsers.base import (
-    ParserError,
-    BlockedError,
-    NetworkError,
-    ValidationError,
-)
+# Используем ленивый импорт для избежания циклических зависимостей
+# Классы будут импортированы при первом использовании в методах
+
+# Базовый класс для ParsingError (может быть переопределен при импорте из parsers.base)
+class ParserError(Exception):
+    """Базовая ошибка парсера (fallback, если импорт из parsers.base не удался)"""
+    pass
 
 
 class ParsingError(ParserError):
@@ -84,13 +85,21 @@ class ErrorHandler(ABC):
         if isinstance(exception, ParsingError):
             return exception.error_type
         
-        # Используем классы ошибок из parsers.base
-        if isinstance(exception, BlockedError):
-            return ErrorType.BLOCKED
-        elif isinstance(exception, NetworkError):
-            return ErrorType.NETWORK
-        elif isinstance(exception, ValidationError):
-            return ErrorType.VALIDATION
+        # Ленивый импорт классов ошибок из parsers.base для избежания циклических зависимостей
+        try:
+            from .parsers.base import BlockedError as ParserBlockedError
+            from .parsers.base import NetworkError as ParserNetworkError
+            from .parsers.base import ValidationError as ParserValidationError
+            
+            if isinstance(exception, ParserBlockedError):
+                return ErrorType.BLOCKED
+            elif isinstance(exception, ParserNetworkError):
+                return ErrorType.NETWORK
+            elif isinstance(exception, ParserValidationError):
+                return ErrorType.VALIDATION
+        except (ImportError, ModuleNotFoundError):
+            # Если импорт не удался, используем fallback классы
+            pass
         
         # Классификация по типу исключения
         error_str = str(exception).lower()
@@ -137,13 +146,20 @@ class ErrorHandler(ABC):
         if isinstance(exception, ParsingError):
             return exception.retryable
         
-        # Блокировки не требуют retry
-        if isinstance(exception, BlockedError):
-            return False
-        
-        # Валидация не требует retry
-        if isinstance(exception, ValidationError):
-            return False
+        # Ленивый импорт классов ошибок из parsers.base
+        try:
+            from .parsers.base import BlockedError as ParserBlockedError
+            from .parsers.base import ValidationError as ParserValidationError
+            
+            # Блокировки не требуют retry
+            if isinstance(exception, ParserBlockedError):
+                return False
+            
+            # Валидация не требует retry
+            if isinstance(exception, ParserValidationError):
+                return False
+        except (ImportError, ModuleNotFoundError):
+            pass
         
         error_type = self.classify_error(exception)
         

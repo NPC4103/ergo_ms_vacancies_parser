@@ -15,15 +15,18 @@ from .models import ParsingTask, TaskItem
 from .normalized_models import NormalizedVacancy
 from .scheduler import default_scheduler
 from .parsers import ParserFactory
-from .tasks import (
-    validate_orchestration_params,
+# Импортируем утилиты из пакета tasks/ (директория), а не из этого файла tasks.py
+from .tasks.base import (
+    get_error_handler_for_task,
+    get_metrics_for_task,
+)
+from .tasks.worker import (
     validate_worker_params,
     claim_items_for_worker,
     process_item,
     handle_item_error,
-    get_error_handler_for_task,
-    get_metrics_for_task,
 )
+from .tasks.orchestration import validate_orchestration_params
 
 logger = logging.getLogger('celery.module.vacancies_parser.tasks')
 

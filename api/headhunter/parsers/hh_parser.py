@@ -12,6 +12,7 @@ from requests.adapters import HTTPAdapter
 from requests.exceptions import SSLError as RequestsSSLError
 import ssl
 from typing import Optional, Dict, Any, List
+from datetime import datetime
 from django.utils import timezone
 
 from .utils import ProxyRotator, UserAgentRotator, RequestJitter, ParsingMetrics, IPBlockingTracker

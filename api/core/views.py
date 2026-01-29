@@ -34,7 +34,12 @@ from .serializers import (
     TaskControlSerializer,
 )
 from .scheduler import default_scheduler
-from .tasks import pause_task, resume_task, stop_task
+# Импортируем задачи напрямую из tasks.py (файл), а не из пакета tasks/ (директория)
+# Используем прямой импорт модуля для избежания конфликта с пакетом core/tasks/
+from modules.vacancies_parser.api.core import tasks as core_tasks_module
+pause_task = core_tasks_module.pause_task
+resume_task = core_tasks_module.resume_task
+stop_task = core_tasks_module.stop_task
 
 logger = logging.getLogger('celery.module.vacancies_parser.api')
 

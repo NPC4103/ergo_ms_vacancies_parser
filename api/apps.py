@@ -20,6 +20,10 @@ class VacanciesParserConfig(AppConfig):
         # Регистрация происходит автоматически при импорте модулей
         from .core.parsers import api_parsers, html_parsers  # noqa
         
+        # Импорт задач для гарантированной регистрации в Celery
+        # Задачи должны быть импортированы, чтобы Celery их обнаружил через autodiscover_tasks
+        from .core import tasks as core_tasks  # noqa: F401
+        
         # Логируем итоговое состояние регистрации только один раз
         # (Django может создавать несколько экземпляров AppConfig)
         if not _module_initialized:

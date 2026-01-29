@@ -367,6 +367,7 @@ def parse_vacancies_by_technologies(
     default_retry_delay=90,
     soft_time_limit=3300,
     time_limit=3600,
+    name='modules.vacancies_parser.api.headhunter.tasks.parse_vacancies_by_category',
 )
 def parse_vacancies_by_category(
     self,
