@@ -29,6 +29,8 @@ logger = logging.getLogger('modules.vacancies_parser.headhunter')
     default_retry_delay=60,
     soft_time_limit=18000,
     time_limit=21600,
+    # ВАЖНО: имя должно совпадать с уже настроенными задачами Beat
+    name="modules.vacancies_parser.api.headhunter.tasks.parse_vacancies_by_professional_roles",
 )
 def parse_vacancies_by_professional_roles(
     self,

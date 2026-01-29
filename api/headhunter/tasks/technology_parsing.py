@@ -20,6 +20,9 @@ logger = logging.getLogger('modules.vacancies_parser.headhunter')
     default_retry_delay=60,
     soft_time_limit=6900,
     time_limit=7200,
+    # ВАЖНО: сохраняем старое имя задачи для обратной совместимости
+    # с уже существующими периодическими задачами Celery Beat
+    name="modules.vacancies_parser.api.headhunter.tasks.parse_hh_segment_by_technologies",
 )
 def parse_hh_segment_by_technologies(
     self,
@@ -255,6 +258,8 @@ def _split_segment_and_parse(search_queries, start_date, end_date, area, pages, 
     default_retry_delay=120,
     soft_time_limit=5100,
     time_limit=5400,
+    # ВАЖНО: имя должно совпадать с уже настроенными задачами Beat
+    name="modules.vacancies_parser.api.headhunter.tasks.parse_vacancies_by_technologies",
 )
 def parse_vacancies_by_technologies(
     self,
