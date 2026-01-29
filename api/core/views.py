@@ -106,6 +106,14 @@ class ParsingTaskViewSet(SwaggerSafeMixin, viewsets.ModelViewSet):
         # Оптимизация: select_related для ForeignKey
         queryset = queryset.select_related('created_by')
         
+        # Проверка на Swagger fake view или AnonymousUser
+        if self.is_swagger_fake_view():
+            return queryset.none()
+        
+        # Проверка на аутентифицированного пользователя
+        if not hasattr(self.request, 'user') or not self.request.user.is_authenticated:
+            return queryset.none()
+        
         # Фильтр по пользователю (если не admin)
         if not self.request.user.is_staff:
             queryset = queryset.filter(

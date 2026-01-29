@@ -27,5 +27,6 @@ class VacanciesParserConfig(AppConfig):
             available_parsers = ParserFactory.get_available_parsers()
             if available_parsers:
                 parsers_list = ', '.join([f"{p['source']}/{p['mode']}" for p in available_parsers])
-                logger.info(f"Модуль vacancies_parser инициализирован. Доступные парсеры: {parsers_list}")
+                # DEBUG уровень, так как это не критичная информация и может дублироваться при перезагрузке
+                logger.debug(f"Модуль vacancies_parser инициализирован. Доступные парсеры: {parsers_list}")
             _module_initialized = True
