@@ -10,8 +10,7 @@ import logging
 from typing import Any, Callable, Dict, Optional
 from kombu.exceptions import OperationalError
 
-from src.config.celery import celery_app
-from .celery_broker import check_broker_available, is_broker_error, BrokerUnavailableError
+from .celery_broker import is_broker_error, BrokerUnavailableError
 
 logger = logging.getLogger('celery.module.vacancies_parser.task_runner')
 
@@ -40,25 +39,10 @@ def safe_task_run(
     if not prefer_async:
         logger.debug("Синхронный запуск задачи (prefer_async=False)")
         return task_func(**params)
-    
+
     try:
-        available, error_msg = check_broker_available(celery_app)
-        
-        if not available:
-            if fallback_to_sync:
-                logger.warning(
-                    f"Брокер недоступен ({error_msg}), переключение на синхронное выполнение"
-                )
-                return task_func(**params)
-            else:
-                raise BrokerUnavailableError(
-                    f"Celery брокер недоступен: {error_msg}. "
-                    "Запустите Celery worker: ergoms start-worker"
-                )
-        
-        logger.debug("Асинхронный запуск задачи через Celery")
-        return task_func.delay(**params)
-        
+        logger.debug("Постановка задачи в очередь Celery")
+        return task_func(**params)
     except (ConnectionRefusedError, OperationalError, ConnectionError, OSError) as e:
         if is_broker_error(e):
             if fallback_to_sync:

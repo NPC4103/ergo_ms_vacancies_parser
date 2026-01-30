@@ -40,7 +40,33 @@ class HeadHunterAPIParser(BaseParser):
         self.session.headers.update({
             'User-Agent': 'ErgoMS Vacancy Parser/1.0 (igoroffrus@mail.ru)'
         })
-    
+
+    def _get_with_retry(self, url: str, params: Optional[Dict[str, Any]] = None) -> requests.Response:
+        last_error = None
+        for attempt in range(self.max_retries):
+            try:
+                response = self.session.get(url, params=params, timeout=self.timeout)
+                return response
+            except (requests.exceptions.SSLError, requests.exceptions.ConnectionError) as e:
+                last_error = e
+                self.logger.warning(
+                    f"SSL/сетевая ошибка для {url} (попытка {attempt + 1}/{self.max_retries}): {e}"
+                )
+            except requests.exceptions.Timeout as e:
+                last_error = e
+                self.logger.warning(
+                    f"Таймаут для {url} (попытка {attempt + 1}/{self.max_retries})"
+                )
+            except requests.RequestException as e:
+                last_error = e
+                self.logger.warning(
+                    f"Ошибка запроса {url} (попытка {attempt + 1}/{self.max_retries}): {e}"
+                )
+            if attempt < self.max_retries - 1:
+                delay = min(2 ** attempt, 10)
+                time.sleep(delay)
+        raise NetworkError(f"Не удалось выполнить запрос {url} после {self.max_retries} попыток: {last_error}")
+
     def validate_config(self, config: Dict[str, Any]) -> bool:
         """
         Валидация конфигурации для HeadHunter API.
@@ -113,14 +139,13 @@ class HeadHunterAPIParser(BaseParser):
         
         for page in range(pages):
             search_params['page'] = page
-            
+
             try:
-                response = self.session.get(
+                response = self._get_with_retry(
                     f"{self.BASE_URL}/vacancies",
-                    params=search_params,
-                    timeout=self.timeout
+                    params=search_params
                 )
-                
+
                 if response.status_code == 403:
                     raise BlockedError("Доступ заблокирован HeadHunter API (403)")
                 
@@ -170,11 +195,8 @@ class HeadHunterAPIParser(BaseParser):
             Dict: Нормализованные данные вакансии
         """
         try:
-            response = self.session.get(
-                f"{self.BASE_URL}/vacancies/{item_id}",
-                timeout=self.timeout
-            )
-            
+            response = self._get_with_retry(f"{self.BASE_URL}/vacancies/{item_id}")
+
             if response.status_code == 403:
                 raise BlockedError(f"Доступ к вакансии {item_id} заблокирован (403)")
             

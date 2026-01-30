@@ -32,12 +32,20 @@
       max-height: 100vh;
       border-radius: $vp-border-radius $vp-border-radius 0 0;
     }
+
+    &.#{$vp-prefix}modal-dialog-large {
+      max-width: 800px;
+    }
   }
 
   .#{$vp-prefix}modal-header {
     @include vp-flex(row, $vp-spacing-md, center, space-between);
     padding: $vp-spacing-lg;
     border-bottom: 1px solid $vp-border-color;
+
+    @include vp-mobile {
+      padding: $vp-spacing-md;
+    }
 
     .#{$vp-prefix}modal-title {
       @include vp-flex(row, $vp-spacing-sm, center, flex-start);
@@ -67,19 +75,50 @@
 
   .#{$vp-prefix}modal-body {
     padding: $vp-spacing-lg;
+
+    @include vp-mobile {
+      padding: $vp-spacing-md;
+    }
+
+    input.#{$vp-prefix}form-control,
+    input[type="text"],
+    input[type="number"] {
+      &:invalid {
+        box-shadow: none;
+        border-color: $vp-border-color;
+      }
+      &:invalid:focus {
+        border-color: $vp-primary-var;
+        box-shadow: 0 0 0 3px rgba(13, 110, 253, 0.1);
+      }
+    }
   }
 
   .#{$vp-prefix}modal-footer {
-    @include vp-flex(row, $vp-spacing-sm, center, flex-end);
+    @include vp-flex(row, $vp-spacing-sm, center, space-between);
     padding: $vp-spacing-lg;
     border-top: 1px solid $vp-border-color;
 
     @include vp-mobile {
+      padding: $vp-spacing-md;
       flex-direction: column-reverse;
       gap: $vp-spacing-sm;
 
       button {
         width: 100%;
+      }
+    }
+
+    .#{$vp-prefix}modal-footer-left {
+      @include vp-flex(row, $vp-spacing-sm, center, flex-start);
+    }
+
+    .#{$vp-prefix}modal-footer-right {
+      @include vp-flex(row, $vp-spacing-sm, center, flex-end);
+
+      @include vp-mobile {
+        width: 100%;
+        flex-direction: column-reverse;
       }
     }
   }
@@ -118,13 +157,14 @@
 
   .#{$vp-prefix}form-control {
     width: 100%;
-    padding: 0.75rem;
+    padding: 0.75rem 1rem;
     border: 1px solid $vp-border-color;
     border-radius: $vp-border-radius-sm;
     font-size: $vp-font-size-base;
     background: $vp-bg-primary;
     color: $vp-text-primary;
-    transition: all $vp-transition-base;
+    transition: border-color $vp-transition-base, box-shadow $vp-transition-base;
+    box-sizing: border-box;
 
     &:focus {
       outline: none;
@@ -136,6 +176,15 @@
       color: $vp-text-secondary;
     }
 
+    &:invalid {
+      box-shadow: none;
+      border-color: $vp-border-color;
+    }
+
+    &:invalid:focus {
+      border-color: $vp-primary-var;
+      box-shadow: 0 0 0 3px rgba(13, 110, 253, 0.1);
+    }
   }
 
   // Стили для select элементов

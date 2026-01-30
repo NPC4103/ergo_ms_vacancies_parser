@@ -152,7 +152,7 @@ class ParsingTaskCreateSerializer(serializers.Serializer):
     
     def create(self, validated_data):
         """Создание задачи через Celery"""
-        from .tasks import create_parsing_task
+        from .celery_tasks import create_parsing_task
         from .utils.task_runner import safe_task_run
         from .utils.celery_broker import BrokerUnavailableError
         

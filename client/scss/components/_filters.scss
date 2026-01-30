@@ -33,40 +33,59 @@
     }
   }
 
-  .#{$vp-prefix}filter-group {
-    display: flex;
-    flex-direction: column;
-    gap: $vp-spacing-xs;
-    
-    label {
-      font-size: $vp-font-size-sm;
-      font-weight: $vp-font-weight-medium;
-      color: $vp-text-primary;
-    }
+    .#{$vp-prefix}filter-group {
+      display: flex;
+      flex-direction: column;
+      gap: $vp-spacing-xs;
+      
+      label {
+        font-size: $vp-font-size-sm;
+        font-weight: $vp-font-weight-medium;
+        color: $vp-text-primary;
+      }
 
-    .#{$vp-prefix}filter-control {
-      width: 100%;
-      padding: 0.625rem 0.875rem;
-      border: 1px solid $vp-border-color;
-      border-radius: $vp-border-radius-sm;
-      font-size: $vp-font-size-sm;
-      background: $vp-bg-primary;
-      color: $vp-text-primary;
-      transition: all $vp-transition-base;
+      .#{$vp-prefix}filter-control {
+        width: 100%;
+        padding: 0.625rem 0.875rem;
+        border: 1px solid $vp-border-color;
+        border-radius: $vp-border-radius-sm;
+        font-size: $vp-font-size-sm;
+        background: $vp-bg-primary;
+        color: $vp-text-primary;
+        transition: all $vp-transition-base;
 
-      &:focus {
-        outline: none;
-        border-color: $vp-primary-var;
-        box-shadow: 0 0 0 3px rgba(13, 110, 253, 0.1);
+        &:focus {
+          outline: none;
+          border-color: $vp-primary-var;
+          box-shadow: 0 0 0 3px rgba(13, 110, 253, 0.1);
+        }
+      }
+
+      // Стили для select элементов
+      select.#{$vp-prefix}filter-control {
+        @include vp-select;
+        padding-right: 2.25rem;
+      }
+
+      // Стили для компонента Select в фильтрах
+      .#{$vp-prefix}select-wrapper {
+        margin-bottom: 0;
+      }
+
+      .#{$vp-prefix}select-label {
+        font-size: $vp-font-size-sm;
+        font-weight: $vp-font-weight-medium;
+        color: $vp-text-primary;
+        margin-bottom: $vp-spacing-xs;
+      }
+
+      .#{$vp-prefix}select-display {
+        padding: 0.625rem 0.875rem;
+        padding-right: 2.75rem;
+        font-size: $vp-font-size-sm;
+        min-height: 38px;
       }
     }
-
-    // Стили для select элементов
-    select.#{$vp-prefix}filter-control {
-      @include vp-select;
-      padding-right: 2.25rem;
-    }
-  }
   
   .#{$vp-prefix}filter-search {
     display: flex;

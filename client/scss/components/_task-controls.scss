@@ -6,6 +6,11 @@
 .#{$vp-prefix}task-controls {
   @include vp-flex(row, $vp-spacing-xs, center, flex-end);
 
+  @include vp-mobile {
+    flex-wrap: wrap;
+    gap: $vp-spacing-xs;
+  }
+
   button {
     @include vp-flex(row, 0, center, center);
     width: 32px;

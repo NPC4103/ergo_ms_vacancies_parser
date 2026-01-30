@@ -16,39 +16,37 @@
     <div class="vp-filters-card">
       <div class="vp-filters-grid">
         <div class="vp-filter-group">
-          <label>Источник</label>
-          <select v-model="filters.source" class="vp-filter-control" @change="applyFilters">
-            <option :value="null">Все источники</option>
-            <option value="headhunter">HeadHunter</option>
-            <option value="habr_career">Habr Career</option>
-            <option value="superjob">SuperJob</option>
-          </select>
+          <Select
+            v-model="filters.source"
+            :options="sourceFilterOptions"
+            label="Источник"
+            placeholder="Все источники"
+            @change="applyFilters"
+          />
         </div>
         
         <div class="vp-filter-group">
-          <label>Режим парсинга</label>
-          <select v-model="filters.parsing_mode" class="vp-filter-control" @change="applyFilters">
-            <option :value="null">Все режимы</option>
-            <option value="api">API режим</option>
-            <option value="html">HTML режим</option>
-          </select>
+          <Select
+            v-model="filters.parsing_mode"
+            :options="modeFilterOptions"
+            label="Режим"
+            placeholder="Все режимы"
+            @change="applyFilters"
+          />
         </div>
         
         <div class="vp-filter-group">
-          <label>Статус</label>
-          <select v-model="filters.status" class="vp-filter-control" @change="applyFilters">
-            <option :value="null">Все статусы</option>
-            <option value="created">Создана</option>
-            <option value="running">Выполняется</option>
-            <option value="paused">Приостановлена</option>
-            <option value="stopped">Остановлена</option>
-            <option value="completed">Завершена</option>
-            <option value="failed">Ошибка</option>
-          </select>
+          <Select
+            v-model="filters.status"
+            :options="statusFilterOptions"
+            label="Статус"
+            placeholder="Все статусы"
+            @change="applyFilters"
+          />
         </div>
         
         <div class="vp-filter-search">
-          <label>Поиск</label>
+          <label class="vp-filter-label">Поиск</label>
           <div style="position: relative;">
             <input 
               v-model="filters.search" 
@@ -221,17 +219,19 @@
           </a>
         </li>
         <li 
-          v-for="page in totalPages" 
-          :key="page" 
+          v-for="(item, index) in visiblePageItems" 
+          :key="item === 'ellipsis' ? `ellipsis-${index}` : item" 
           class="vp-page-item"
         >
+          <span v-if="item === 'ellipsis'" class="vp-page-ellipsis" aria-hidden="true">…</span>
           <a 
+            v-else
             class="vp-page-link" 
-            :class="{ active: page === pagination.page }"
+            :class="{ active: item === pagination.page }"
             href="#" 
-            @click.prevent="changePage(page)"
+            @click.prevent="changePage(item)"
           >
-            {{ page }}
+            {{ item }}
           </a>
         </li>
         <li class="vp-page-item">
@@ -249,9 +249,8 @@
 
     <!-- Модальное окно создания задачи -->
     <CreateTaskModal 
-      v-if="showCreateModal" 
+      v-if="showCreateModal"
       @close="showCreateModal = false"
-      @created="handleTaskCreated"
       @task-created="handleTaskCreated"
     />
   </div>
@@ -269,6 +268,7 @@ import { useParsingTasks } from '../composables/useParsingTasks'
 import TaskProgressBar from './TaskProgressBar.vue'
 import TaskControlButtons from './TaskControlButtons.vue'
 import CreateTaskModal from './CreateTaskModal.vue'
+import Select from './Select.vue'
 import { useToast } from 'vue-toastification'
 
 const router = useRouter()
@@ -298,6 +298,45 @@ let refreshInterval = null
 
 // Computed
 const totalPages = computed(() => Math.ceil(pagination.value.total / pagination.value.pageSize))
+
+const visiblePageItems = computed(() => {
+  const total = totalPages.value
+  const current = pagination.value.page
+  if (total <= 7) {
+    return Array.from({ length: total }, (_, i) => i + 1)
+  }
+  const items = [1]
+  if (current > 2) items.push('ellipsis')
+  const low = Math.max(2, current - 1)
+  const high = Math.min(total - 1, current + 1)
+  for (let p = low; p <= high; p++) items.push(p)
+  if (current < total - 1) items.push('ellipsis')
+  if (total > 1) items.push(total)
+  return items
+})
+
+const sourceFilterOptions = [
+  { value: null, label: 'Все источники' },
+  { value: 'headhunter', label: 'HeadHunter' },
+  { value: 'habr_career', label: 'Habr Career' },
+  { value: 'superjob', label: 'SuperJob' }
+]
+
+const modeFilterOptions = [
+  { value: null, label: 'Все режимы' },
+  { value: 'api', label: 'API режим' },
+  { value: 'html', label: 'HTML режим' }
+]
+
+const statusFilterOptions = [
+  { value: null, label: 'Все статусы' },
+  { value: 'created', label: 'Создана' },
+  { value: 'running', label: 'Выполняется' },
+  { value: 'paused', label: 'Приостановлена' },
+  { value: 'stopped', label: 'Остановлена' },
+  { value: 'completed', label: 'Завершена' },
+  { value: 'failed', label: 'Ошибка' }
+]
 
 // Debounced search
 let searchTimeout = null
@@ -413,9 +452,8 @@ async function handleDelete(task) {
 
 async function handleTaskCreated() {
   showCreateModal.value = false
-  // Перезагружаем список задач
   await loadTasks()
-  toast.success('Список задач обновлен')
+  setTimeout(() => loadTasks(), 2500)
 }
 
 // Lifecycle

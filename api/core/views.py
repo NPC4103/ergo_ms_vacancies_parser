@@ -133,12 +133,18 @@ class ParsingTaskViewSet(SwaggerSafeMixin, viewsets.ModelViewSet):
             )
         
         return queryset
-    
+
+    def create(self, request, *args, **kwargs):
+        """Создание задачи через Celery; ответ — результат save() (включая celery_task_id)."""
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        result = self.perform_create(serializer)
+        return Response(result, status=status.HTTP_201_CREATED)
+
     def perform_create(self, serializer):
         """Создание задачи через Celery"""
-        result = serializer.save()
-        return result
-    
+        return serializer.save()
+
     @action(detail=True, methods=['get'], url_path='progress')
     def progress(self, request, pk=None):
         """

@@ -152,7 +152,6 @@
             </div>
           </div>
         </div>
-      </div>
 
       <!-- Статистика -->
       <div v-if="currentTask.is_finished" class="vp-task-detail-section">
@@ -192,7 +191,6 @@
             </div>
           </div>
         </div>
-      </div>
 
       <!-- Ошибка -->
       <div v-if="currentTask.error_message" class="vp-alert vp-alert-danger">

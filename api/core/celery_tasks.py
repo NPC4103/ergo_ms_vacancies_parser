@@ -160,7 +160,7 @@ def create_parsing_task(
                 task.save(update_fields=['error_message', 'updated_at'])
             
             result = task.id
-            metrics.record_task_success(task_id, result, task_id=task.id)
+            metrics.record_task_success(task_id, result)
             return result
             
         except Exception as e:
@@ -299,14 +299,14 @@ def parse_items_worker(self, task_id: int, worker_id: str):
         raise
     
     # Запись начала задачи
-    metrics.record_task_start(celery_task_id, task_name=self.name, task_id=task_id, worker_id=worker_id)
+    metrics.record_task_start(celery_task_id, task_name=self.name, parsing_task_id=task_id, worker_id=worker_id)
     
     try:
         task = ParsingTask.objects.get(id=task_id)
         
         if task.status != 'running':
             logger.info(f"Worker {worker_id}: задача {task_id} не в статусе 'running', завершение")
-            metrics.record_task_success(celery_task_id, {'status': 'skipped'}, task_id=task_id)
+            metrics.record_task_success(celery_task_id, {'status': 'skipped'}, parsing_task_id=task_id)
             return
         
         logger.info(f"Worker {worker_id} запущен для задачи {task_id}")
@@ -365,16 +365,16 @@ def parse_items_worker(self, task_id: int, worker_id: str):
         
         result = {'processed_count': processed_count, 'task_id': task_id}
         logger.info(f"Worker {worker_id} завершен для задачи {task_id}: обработано {processed_count} items")
-        metrics.record_task_success(celery_task_id, result, task_id=task_id, processed_count=processed_count)
+        metrics.record_task_success(celery_task_id, result, parsing_task_id=task_id, processed_count=processed_count)
         
     except ParsingTask.DoesNotExist:
         error_msg = f"Задача {task_id} не найдена"
         logger.error(f"Worker {worker_id}: {error_msg}")
-        metrics.record_task_failure(celery_task_id, Exception(error_msg), task_id=task_id)
+        metrics.record_task_failure(celery_task_id, Exception(error_msg), parsing_task_id=task_id)
         raise
     except Exception as e:
         logger.error(f"Worker {worker_id}: критическая ошибка для задачи {task_id}: {e}")
-        metrics.record_task_failure(celery_task_id, e, task_id=task_id)
+        metrics.record_task_failure(celery_task_id, e, parsing_task_id=task_id)
         error_handler.handle_error(e, {'task_id': task_id, 'worker_id': worker_id})
         raise
 

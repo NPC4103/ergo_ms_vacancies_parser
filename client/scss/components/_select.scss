@@ -1,0 +1,331 @@
+// Стили улучшенного компонента Select
+
+@import '../variables';
+@import '../mixins';
+
+.#{$vp-prefix}select-wrapper {
+  margin-bottom: $vp-spacing-lg;
+  position: relative;
+}
+
+.#{$vp-prefix}select-label {
+  display: block;
+  font-size: $vp-font-size-sm;
+  font-weight: $vp-font-weight-medium;
+  color: $vp-text-primary;
+  margin-bottom: $vp-spacing-xs;
+
+  .#{$vp-prefix}required {
+    color: $vp-danger-var;
+    margin-left: 0.25rem;
+  }
+}
+
+.#{$vp-prefix}select-container {
+  position: relative;
+  width: 100%;
+}
+
+.#{$vp-prefix}select-native {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  cursor: pointer;
+  z-index: 0;
+  appearance: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  outline: none;
+  border: none;
+  background: transparent;
+
+  &:invalid,
+  &:focus {
+    outline: none;
+    box-shadow: none;
+  }
+
+  &:disabled {
+    cursor: not-allowed;
+  }
+}
+
+.#{$vp-prefix}select-display {
+  @include vp-flex(row, $vp-spacing-sm, center, space-between);
+  width: 100%;
+  padding: 0.75rem 1rem;
+  padding-right: 2.75rem;
+  border: 1px solid $vp-border-color;
+  border-radius: $vp-border-radius-sm;
+  background: $vp-bg-primary;
+  color: $vp-text-primary;
+  font-size: $vp-font-size-base;
+  cursor: pointer;
+  transition: all $vp-transition-base;
+  min-height: 40px;
+  position: relative;
+  z-index: 2;
+
+  &:hover:not(.#{$vp-prefix}select-disabled) {
+    border-color: $vp-primary-var;
+    box-shadow: 0 0 0 3px rgba(13, 110, 253, 0.05);
+  }
+
+  &.#{$vp-prefix}select-placeholder {
+    color: $vp-text-secondary;
+  }
+}
+
+.#{$vp-prefix}select-container.#{$vp-prefix}select-focused .#{$vp-prefix}select-display,
+.#{$vp-prefix}select-container.#{$vp-prefix}select-open .#{$vp-prefix}select-display {
+  border-color: $vp-primary-var;
+  box-shadow: 0 0 0 3px rgba(13, 110, 253, 0.1);
+  outline: none;
+}
+
+.#{$vp-prefix}select-container.#{$vp-prefix}select-disabled .#{$vp-prefix}select-display {
+  opacity: 0.6;
+  cursor: not-allowed;
+  background-color: $vp-bg-secondary;
+}
+
+.#{$vp-prefix}select-container.#{$vp-prefix}select-error .#{$vp-prefix}select-display {
+  border-color: $vp-danger-var;
+  
+  &:hover {
+    border-color: $vp-danger-var;
+    box-shadow: 0 0 0 3px rgba(220, 53, 69, 0.1);
+  }
+}
+
+.#{$vp-prefix}select-content {
+  @include vp-flex(row, $vp-spacing-sm, center, flex-start);
+  flex: 1;
+  min-width: 0;
+}
+
+.#{$vp-prefix}select-icon {
+  @include vp-flex(row, 0, center, center);
+  flex-shrink: 0;
+  color: $vp-text-secondary;
+}
+
+.#{$vp-prefix}select-icon-img {
+  width: 22px;
+  height: 22px;
+  object-fit: contain;
+  display: block;
+}
+
+.#{$vp-prefix}select-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.#{$vp-prefix}select-arrow {
+  flex-shrink: 0;
+  color: $vp-text-secondary;
+  transition: transform $vp-transition-base;
+  margin-left: $vp-spacing-xs;
+}
+
+.#{$vp-prefix}select-arrow-open {
+  transform: rotate(180deg);
+}
+
+// Кастомный dropdown
+.#{$vp-prefix}select-dropdown {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  z-index: 1000;
+  background: $vp-bg-primary;
+  border: 1px solid $vp-border-color;
+  border-radius: $vp-border-radius-sm;
+  box-shadow: $vp-shadow-lg;
+  max-height: 300px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  margin-top: 4px;
+
+  @include vp-mobile {
+    max-height: 50vh;
+  }
+
+  // Кастомный скроллбар
+  &::-webkit-scrollbar {
+    width: 8px;
+  }
+
+  &::-webkit-scrollbar-track {
+    background: $vp-bg-secondary;
+    border-radius: 4px;
+  }
+
+  &::-webkit-scrollbar-thumb {
+    background: $vp-border-color;
+    border-radius: 4px;
+    transition: background $vp-transition-base;
+
+    &:hover {
+      background: $vp-text-secondary;
+    }
+  }
+}
+
+.#{$vp-prefix}select-options {
+  padding: $vp-spacing-xs;
+}
+
+.#{$vp-prefix}select-option {
+  @include vp-flex(row, $vp-spacing-sm, center, flex-start);
+  padding: 0.75rem 1rem;
+  border-radius: $vp-border-radius-sm;
+  cursor: pointer;
+  transition: all $vp-transition-base;
+  font-size: $vp-font-size-base;
+  color: $vp-text-primary;
+  background: transparent;
+  margin-bottom: 2px;
+  position: relative;
+
+  @include vp-mobile {
+    min-height: 44px;
+  }
+
+  &:last-child {
+    margin-bottom: 0;
+  }
+
+  &:hover,
+  &.#{$vp-prefix}select-option-hover {
+    background: rgba(13, 110, 253, 0.08);
+    color: $vp-text-primary;
+  }
+
+  &.#{$vp-prefix}select-option-selected {
+    background: rgba(13, 110, 253, 0.12);
+    color: $vp-primary-var;
+    font-weight: $vp-font-weight-medium;
+
+    &:hover {
+      background: rgba(13, 110, 253, 0.16);
+    }
+  }
+}
+
+.#{$vp-prefix}select-option-icon {
+  @include vp-flex(row, 0, center, center);
+  flex-shrink: 0;
+  color: $vp-text-secondary;
+  margin-right: $vp-spacing-xs;
+  transition: color $vp-transition-base;
+}
+
+.#{$vp-prefix}select-option-selected .#{$vp-prefix}select-option-icon {
+  color: $vp-primary-var;
+}
+
+.#{$vp-prefix}select-option-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.#{$vp-prefix}select-option-check {
+  flex-shrink: 0;
+  color: $vp-primary-var;
+  margin-left: $vp-spacing-xs;
+}
+
+.#{$vp-prefix}select-help {
+  @include vp-flex(row, $vp-spacing-xs, flex-start, flex-start);
+  margin-top: $vp-spacing-xs;
+  font-size: $vp-font-size-xs;
+  color: $vp-text-secondary;
+
+  svg {
+    flex-shrink: 0;
+    margin-top: 0.125rem;
+  }
+
+  span {
+    line-height: 1.5;
+  }
+}
+
+.#{$vp-prefix}select-error-message {
+  margin-top: $vp-spacing-xs;
+  font-size: $vp-font-size-xs;
+  color: $vp-danger-var;
+}
+
+.#{$vp-prefix}select-wrapper.#{$vp-prefix}select-disabled {
+  opacity: 0.6;
+  pointer-events: none;
+}
+
+.#{$vp-prefix}select-wrapper.#{$vp-prefix}select-error {
+  .#{$vp-prefix}select-label {
+    color: $vp-danger-var;
+  }
+}
+
+// Анимация появления dropdown
+.vp-dropdown-enter-active,
+.vp-dropdown-leave-active {
+  transition: all $vp-transition-base;
+}
+
+.vp-dropdown-enter-from {
+  opacity: 0;
+  transform: translateY(-8px);
+}
+
+.vp-dropdown-leave-to {
+  opacity: 0;
+  transform: translateY(-8px);
+}
+
+// Стили для больших select (vp-form-control-lg)
+.#{$vp-prefix}select-container .#{$vp-prefix}select-display {
+  &.#{$vp-prefix}select-lg {
+    padding: 0.875rem 1rem;
+    padding-right: 2.75rem;
+    font-size: $vp-font-size-base;
+    min-height: 44px;
+  }
+}
+
+// Улучшенные стили для option элементов в нативном select (fallback)
+select.#{$vp-prefix}select-native {
+  option {
+    padding: 0.75rem 1rem;
+    background: $vp-bg-primary;
+    color: $vp-text-primary;
+    font-size: $vp-font-size-base;
+    
+    &:hover {
+      background: $vp-bg-secondary;
+    }
+    
+    &:checked {
+      background: rgba(13, 110, 253, 0.1);
+      color: $vp-primary-var;
+    }
+    
+    &:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+  }
+}

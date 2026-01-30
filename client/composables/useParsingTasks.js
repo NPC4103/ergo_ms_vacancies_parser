@@ -122,17 +122,26 @@ export function useParsingTasks() {
   async function createTask(data) {
     loading.value = true
     error.value = null
-    
+
     try {
       const response = await tasksApi.create(data)
-      toast.success('Задача создана и запущена')
-      await loadTasks() // Перезагрузить список
-      // handleResponse возвращает { data: ..., success: ..., message: ... }
+      await loadTasks()
       return response.data || response
     } catch (err) {
       error.value = err.message || 'Ошибка создания задачи'
+      const responseData = err.response?.data
+      if (responseData && err.response?.status === 400) {
+        try {
+          console.warn('Validation errors (400):', JSON.stringify(responseData, null, 2))
+        } catch (_) {
+          console.warn('Validation errors (400):', responseData)
+        }
+      }
       toast.error(error.value)
-      throw err
+      const wrapped = new Error(error.value)
+      wrapped.responseData = responseData
+      wrapped.status = err.response?.status
+      throw wrapped
     } finally {
       loading.value = false
     }

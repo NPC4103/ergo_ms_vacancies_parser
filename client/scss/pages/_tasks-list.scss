@@ -30,6 +30,11 @@
 }
 
 .#{$vp-prefix}tasks-list-page {
+  @include vp-mobile {
+    padding-left: $vp-spacing-md;
+    padding-right: $vp-spacing-md;
+  }
+
   .#{$vp-prefix}page-header {
     @include vp-flex(row, $vp-spacing-md, center, space-between);
     margin-bottom: $vp-spacing-xl;
@@ -38,6 +43,7 @@
       flex-direction: column;
       align-items: flex-start;
       gap: $vp-spacing-md;
+      margin-bottom: $vp-spacing-lg;
     }
 
     h2 {
@@ -67,11 +73,20 @@
     @include vp-card(false);
     margin-bottom: $vp-spacing-xl;
     padding: $vp-spacing-lg;
+
+    @include vp-mobile {
+      margin-bottom: $vp-spacing-lg;
+      padding: $vp-spacing-md;
+    }
     
     .#{$vp-prefix}filters-grid {
       display: grid;
       grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
       gap: $vp-spacing-md;
+
+      @include vp-tablet {
+        grid-template-columns: repeat(2, 1fr);
+      }
 
       @include vp-mobile {
         grid-template-columns: 1fr;
@@ -82,7 +97,11 @@
       display: flex;
       flex-direction: column;
       gap: $vp-spacing-xs;
-      
+
+      .#{$vp-prefix}select-wrapper {
+        margin-bottom: 0;
+      }
+
       label {
         font-size: $vp-font-size-sm;
         font-weight: $vp-font-weight-medium;
@@ -117,19 +136,21 @@
       display: flex;
       flex-direction: column;
       gap: $vp-spacing-xs;
-      
+
+      .#{$vp-prefix}filter-label,
       label {
         font-size: $vp-font-size-sm;
         font-weight: $vp-font-weight-medium;
         color: $vp-text-primary;
       }
-      
+
       > div {
         position: relative;
       }
-      
+
       .#{$vp-prefix}filter-input {
         width: 100%;
+        min-height: $vp-input-height;
         padding: 0.625rem 2.5rem 0.625rem 0.875rem;
         border: 1px solid $vp-border-color;
         border-radius: $vp-border-radius-sm;
@@ -137,6 +158,7 @@
         background: $vp-bg-primary;
         color: $vp-text-primary;
         transition: all $vp-transition-base;
+        box-sizing: border-box;
 
         &:focus {
           outline: none;
@@ -177,12 +199,20 @@
     display: grid;
     grid-template-columns: 1fr;
     gap: $vp-spacing-md;
+
+    @include vp-mobile {
+      gap: $vp-spacing-sm;
+    }
   }
 
   .#{$vp-prefix}task-card {
     @include vp-task-card;
     @include vp-fade-in;
     margin-bottom: $vp-spacing-md;
+
+    @include vp-mobile {
+      margin-bottom: $vp-spacing-sm;
+    }
 
     .#{$vp-prefix}task-header {
       @include vp-flex(row, $vp-spacing-md, flex-start, space-between);
@@ -327,10 +357,33 @@
       list-style: none;
       margin: 0;
       padding: 0;
+
+      @include vp-mobile {
+        flex-wrap: wrap;
+        gap: $vp-spacing-xs;
+        justify-content: center;
+      }
     }
 
     .#{$vp-prefix}page-item {
       list-style: none;
+
+      .#{$vp-prefix}page-ellipsis {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        min-width: 36px;
+        height: 36px;
+        padding: 0 $vp-spacing-xs;
+        color: $vp-text-secondary;
+        font-size: $vp-font-size-sm;
+        user-select: none;
+
+        @include vp-mobile {
+          min-width: 32px;
+          height: 32px;
+        }
+      }
 
       .#{$vp-prefix}page-link {
         display: flex;
@@ -339,6 +392,12 @@
         min-width: 40px;
         height: 40px;
         padding: 0 $vp-spacing-sm;
+
+        @include vp-mobile {
+          min-width: 36px;
+          height: 36px;
+          padding: 0 $vp-spacing-xs;
+        }
         border: 1px solid $vp-border-color;
         border-radius: $vp-border-radius-sm;
         background: $vp-bg-primary;
