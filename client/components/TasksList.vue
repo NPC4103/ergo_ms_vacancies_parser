@@ -86,6 +86,11 @@
         :key="task.id"
         class="vp-task-card"
         :class="getTaskCardClass(task)"
+        role="button"
+        tabindex="0"
+        @click="goToTask(task.id)"
+        @keydown.enter.prevent="goToTask(task.id)"
+        @keydown.space.prevent="goToTask(task.id)"
       >
         <!-- Заголовок задачи -->
         <div class="vp-task-header">
@@ -115,7 +120,7 @@
           </div>
           
           <!-- Кнопки управления -->
-          <div class="vp-task-actions">
+          <div class="vp-task-actions" @click.stop>
             <TaskControlButtons 
               :task="task" 
               @pause="handlePause"
@@ -126,17 +131,8 @@
           </div>
         </div>
 
-        <!-- Прогресс-бар -->
+        <!-- Прогресс -->
         <div class="vp-task-progress-section">
-          <div class="vp-task-progress-header">
-            <span class="vp-text-sm vp-text-muted">
-              <TrendingUp :size="14" />
-              Прогресс выполнения
-            </span>
-            <span class="vp-text-sm vp-font-weight-semibold" :class="getProgressColor(task.progress_percent)">
-              {{ task.progress_percent }}%
-            </span>
-          </div>
           <TaskProgressBar :task="task" />
         </div>
 
@@ -173,14 +169,20 @@
           
           <!-- Осталось -->
           <div class="vp-task-stat-item">
-            <Clock :size="18" class="vp-text-info" />
+            <Clock :size="18" class="vp-text-muted" />
             <div>
               <div class="vp-stat-label">Осталось</div>
-              <div class="vp-stat-value vp-text-info">
-                {{ (task.total_items || 0) - (task.completed_items || 0) - (task.failed_items || 0) }}
+              <div class="vp-stat-value vp-text-muted">
+                {{ remainingCount(task) }}
               </div>
             </div>
           </div>
+        </div>
+
+        <!-- Сообщение об ошибке -->
+        <div v-if="task.error_message" class="vp-task-error-line">
+          <AlertCircle :size="14" />
+          <span class="vp-task-error-text">{{ task.error_message }}</span>
         </div>
 
         <!-- Дополнительная информация -->
@@ -253,6 +255,20 @@
       @close="showCreateModal = false"
       @task-created="handleTaskCreated"
     />
+
+    <!-- Подтверждение удаления -->
+    <ConfirmDialog
+      :show="showDeleteConfirm"
+      title="Удаление задачи"
+      :message="deleteConfirmMessage"
+      confirm-text="Удалить"
+      cancel-text="Отмена"
+      variant="danger"
+      :loading="deleteInProgress"
+      @confirm="handleConfirmDelete"
+      @cancel="closeDeleteConfirm"
+      @close="closeDeleteConfirm"
+    />
   </div>
 </template>
 
@@ -261,10 +277,11 @@ import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { 
   FileText, Plus, X, AlertCircle, Info, CheckCircle, XCircle, Clock,
-  Database, Calendar, Play, CheckCircle2, User, TrendingUp, Circle,
+  Database, Calendar, Play, CheckCircle2, User, Circle,
   Loader, Pause, StopCircle, AlertTriangle
 } from 'lucide-vue-next'
 import { useParsingTasks } from '../composables/useParsingTasks'
+import ConfirmDialog from '@/components/ConfirmDialog.vue'
 import TaskProgressBar from './TaskProgressBar.vue'
 import TaskControlButtons from './TaskControlButtons.vue'
 import CreateTaskModal from './CreateTaskModal.vue'
@@ -294,6 +311,10 @@ const {
 
 // Local state
 const showCreateModal = ref(false)
+const showDeleteConfirm = ref(false)
+const deleteConfirmMessage = ref('')
+const taskToDelete = ref(null)
+const deleteInProgress = ref(false)
 let refreshInterval = null
 
 // Computed
@@ -423,12 +444,15 @@ function getStatusIcon(status) {
   return icons[status] || Circle
 }
 
-function getProgressColor(percent) {
-  if (percent >= 100) return 'vp-text-success'
-  if (percent >= 75) return 'vp-text-info'
-  if (percent >= 50) return 'vp-text-primary'
-  if (percent >= 25) return 'vp-text-warning'
-  return 'vp-text-secondary'
+function remainingCount(task) {
+  const total = task.total_items || 0
+  const completed = task.completed_items || 0
+  const failed = task.failed_items || 0
+  return Math.max(0, total - completed - failed)
+}
+
+function goToTask(taskId) {
+  router.push(`/vacancies-parser/tasks/${taskId}`)
 }
 
 async function handlePause(task) {
@@ -443,10 +467,29 @@ async function handleStop(task) {
   await stopTask(task.id)
 }
 
-async function handleDelete(task) {
-  // Используем простое подтверждение (ConfirmDialog требует дополнительной настройки)
-  if (window.confirm(`Удалить задачу "${task.name}"?`)) {
-    await deleteTask(task.id)
+function handleDelete(task) {
+  taskToDelete.value = task
+  deleteConfirmMessage.value = `Удалить задачу «${task.name || 'Без названия'}»? Это действие нельзя отменить.`
+  showDeleteConfirm.value = true
+}
+
+function closeDeleteConfirm() {
+  showDeleteConfirm.value = false
+  taskToDelete.value = null
+  deleteConfirmMessage.value = ''
+}
+
+async function handleConfirmDelete() {
+  if (!taskToDelete.value) return
+  deleteInProgress.value = true
+  try {
+    await deleteTask(taskToDelete.value.id)
+    closeDeleteConfirm()
+    toast.success('Задача удалена')
+  } catch (e) {
+    toast.error(e?.message || 'Не удалось удалить задачу')
+  } finally {
+    deleteInProgress.value = false
   }
 }
 
