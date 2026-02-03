@@ -124,7 +124,7 @@
     .vp-stat-subtitle {
       font-size: $vp-font-size-xs;
       color: $vp-text-muted;
-      margin-top: $vp-spacing-xs / 2;
+      margin-top: calc($vp-spacing-xs / 2);
     }
   }
 

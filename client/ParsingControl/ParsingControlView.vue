@@ -1,6 +1,6 @@
 <script setup>
 import { ref, computed } from 'vue'
-import { Play, Settings, CheckCircle, XCircle, Clock, Code, Users } from 'lucide-vue-next'
+import { Play, Settings, CheckCircle, XCircle, Clock, Code, Users, AlertCircle } from 'lucide-vue-next'
 import { useParsing } from '../composables/useParsing'
 import { useToast } from 'vue-toastification'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
@@ -273,6 +273,7 @@ const taskStatusColor = computed(() => {
           </label>
         </div>
       </div>
+      </div>
 
       <div class="vp-form-section-actions">
         <button 
@@ -283,6 +284,7 @@ const taskStatusColor = computed(() => {
           <Play :size="18" />
           {{ parsing ? 'Запуск...' : 'Запустить парсинг' }}
         </button>
+      </div>
       </div>
     </div>
 
@@ -348,6 +350,7 @@ const taskStatusColor = computed(() => {
           </label>
         </div>
       </div>
+      </div>
 
       <div class="vp-form-section-actions">
         <button 
@@ -358,6 +361,7 @@ const taskStatusColor = computed(() => {
           <Play :size="18" />
           {{ parsing ? 'Запуск...' : 'Запустить парсинг' }}
         </button>
+      </div>
       </div>
     </div>
 

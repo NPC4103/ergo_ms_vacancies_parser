@@ -49,7 +49,7 @@
     .#{$vp-prefix}stat-label {
       font-size: $vp-font-size-sm;
       color: $vp-text-secondary;
-      margin-top: $vp-spacing-xs / 2;
+      margin-top: calc($vp-spacing-xs / 2);
     }
   }
 
