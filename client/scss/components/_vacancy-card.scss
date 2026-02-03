@@ -4,10 +4,37 @@
 @import '../mixins';
 
 .#{$vp-prefix}vacancy-card {
-  @include vp-card(true);
+  @include vp-card(false);
   height: 100%;
   display: flex;
   flex-direction: column;
+  padding: $vp-spacing-lg;
+  margin-bottom: $vp-spacing-lg;
+  border: 1px solid $vp-border-color;
+  border-radius: $vp-border-radius;
+  border-left-width: 4px;
+  border-left-style: solid;
+  border-left-color: $vp-border-color;
+  background: $vp-bg-primary;
+  transition: box-shadow $vp-transition-base, transform $vp-transition-base, border-color $vp-transition-base, background $vp-transition-base;
+
+  &:hover {
+    box-shadow: $vp-shadow-md;
+    transform: translateY(-2px);
+    background: $vp-bg-secondary;
+  }
+
+  &.#{$vp-prefix}vacancy-headhunter {
+    border-left-color: $vp-danger-var;
+  }
+
+  &.#{$vp-prefix}vacancy-habr {
+    border-left-color: $vp-info-var;
+  }
+
+  &.#{$vp-prefix}vacancy-superjob {
+    border-left-color: $vp-success-var;
+  }
 
   .#{$vp-prefix}vacancy-header {
     margin-bottom: $vp-spacing-md;
@@ -15,7 +42,7 @@
     .#{$vp-prefix}vacancy-title {
       font-size: $vp-font-size-lg;
       font-weight: $vp-font-weight-semibold;
-      color: $vp-text-primary;
+      color: $vp-danger-var;
       margin: 0 0 $vp-spacing-xs 0;
       line-height: 1.4;
 
@@ -83,7 +110,7 @@
 
 .#{$vp-prefix}vacancies-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
   gap: $vp-spacing-lg;
 
   @include vp-mobile {

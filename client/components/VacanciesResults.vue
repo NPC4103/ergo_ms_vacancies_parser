@@ -11,49 +11,49 @@
     <!-- Фильтры -->
     <div class="vp-filters-card">
       <div class="vp-filters-grid">
-        <div class="vp-form-group">
-          <label>Источник</label>
-          <select v-model="filters.source" class="vp-form-control" @change="applyFilters">
-            <option :value="null">Все источники</option>
-            <option value="headhunter">HeadHunter</option>
-            <option value="habr_career">Habr Career</option>
-            <option value="superjob">SuperJob</option>
-          </select>
+        <div class="vp-filter-group">
+          <Select
+            v-model="filters.source"
+            :options="sourceOptions"
+            label="Источник"
+            placeholder="Все источники"
+            @change="applyFilters"
+          />
         </div>
         
-        <div class="vp-form-group">
+        <div class="vp-filter-group">
           <label>Компания</label>
           <input 
             v-model="filters.company" 
             type="text" 
-            class="vp-form-control" 
+            class="vp-filter-input" 
             placeholder="Название компании..."
             @input="debouncedSearch"
           >
         </div>
         
-        <div class="vp-form-group">
+        <div class="vp-filter-group">
           <label>Город</label>
           <input 
             v-model="filters.area" 
             type="text" 
-            class="vp-form-control" 
+            class="vp-filter-input" 
             placeholder="Город..."
             @input="debouncedSearch"
           >
         </div>
         
-        <div class="vp-form-group">
-          <label>Поиск</label>
-          <div class="vp-input-group">
+        <div class="vp-filter-search">
+          <label class="vp-filter-label">Поиск</label>
+          <div>
             <input 
               v-model="filters.search" 
               type="text" 
-              class="vp-form-control" 
+              class="vp-filter-input" 
               placeholder="Поиск по названию..."
               @input="debouncedSearch"
             >
-            <button class="vp-btn-secondary" type="button" @click="resetFilters">
+            <button class="vp-filter-clear" type="button" @click="resetFilters">
               <X :size="18" />
             </button>
           </div>
@@ -97,7 +97,12 @@
 
     <!-- Список вакансий -->
     <div v-else class="vp-vacancies-grid">
-      <div v-for="vacancy in vacancies" :key="vacancy.id" class="vp-vacancy-card">
+      <div 
+        v-for="vacancy in vacancies" 
+        :key="vacancy.id" 
+        class="vp-vacancy-card"
+        :class="getVacancyCardClass(vacancy)"
+      >
         <div class="vp-vacancy-header">
           <h5 class="vp-vacancy-title">
             <a :href="vacancy.source_url" target="_blank" class="vp-link">
@@ -166,9 +171,13 @@
           v-for="page in displayedPages" 
           :key="page" 
           class="vp-page-item"
-          :class="{ active: page === currentPage }"
         >
-          <a class="vp-page-link" href="#" @click.prevent="changePage(page)">
+          <a 
+            class="vp-page-link" 
+            :class="{ active: page === currentPage }"
+            href="#" 
+            @click.prevent="changePage(page)"
+          >
             {{ page }}
           </a>
         </li>
@@ -195,6 +204,7 @@ import {
 } from 'lucide-vue-next'
 import { vacanciesApi } from '../js/api'
 import { useToast } from 'vue-toastification'
+import Select from './Select.vue'
 
 const toast = useToast()
 
@@ -218,6 +228,21 @@ const filters = ref({
   area: '',
   search: ''
 })
+
+const sourceOptions = [
+  { value: null, label: 'Все источники' },
+  { value: 'headhunter', label: 'HeadHunter' },
+  { value: 'habr_career', label: 'Habr Career' },
+  { value: 'superjob', label: 'SuperJob' }
+]
+
+function getVacancyCardClass(vacancy) {
+  return {
+    'vp-vacancy-headhunter': vacancy.source === 'headhunter',
+    'vp-vacancy-habr': vacancy.source === 'habr_career',
+    'vp-vacancy-superjob': vacancy.source === 'superjob'
+  }
+}
 
 // Computed
 const totalPages = computed(() => Math.ceil(totalCount.value / pageSize.value))

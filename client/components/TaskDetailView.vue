@@ -212,7 +212,7 @@ import {
   AlertTriangle, BarChart2, RefreshCw
 } from 'lucide-vue-next'
 import { useParsingTasks } from '../composables/useParsingTasks'
-import { statisticsApi } from '../js/api'
+import { tasksApi } from '../js/api'
 import TaskProgressBar from './TaskProgressBar.vue'
 import TaskControlButtons from './TaskControlButtons.vue'
 
@@ -313,9 +313,15 @@ async function handleStop(task) {
 async function loadStatistics() {
   loadingStats.value = true
   try {
-    const response = await statisticsApi.list({ task: route.params.id })
-    if (response.results && response.results.length > 0) {
-      statistics.value = response.results[0]
+    const taskId = route.params.id
+    const response = await tasksApi.getStatistics(taskId)
+
+    // apiClient возвращает объект формата { success, data, message, status }
+    if (response && response.success && response.data) {
+      statistics.value = response.data
+    } else {
+      // Если success === false, логируем сообщение, чтобы было видно причину
+      console.error('Statistics response error:', response?.message || 'unknown error')
     }
   } catch (err) {
     console.error('Error loading statistics:', err)

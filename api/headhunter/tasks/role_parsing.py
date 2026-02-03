@@ -74,7 +74,8 @@ def parse_vacancies_by_professional_roles(
     Returns:
         dict: Статистика парсинга
     """
-    from .utils.professional_roles_config import ProfessionalRolesManager
+    # utils лежит уровнем выше, а не внутри пакета tasks
+    from ..utils.professional_roles_config import ProfessionalRolesManager
 
     logger.info('Запуск парсинга вакансий по профессиональным ролям IT')
     logger.info(f'Параметры: area={area}, pages={pages}, delay={delay}, get_details={get_details}, parallel_workers={parallel_workers}')
@@ -898,7 +899,8 @@ def parse_single_role_batch(
     Returns:
         Статистика обработки батча ролей
     """
-    from .utils.professional_roles_config import ProfessionalRolesManager
+    # utils лежит уровнем выше, а не внутри пакета tasks
+    from ..utils.professional_roles_config import ProfessionalRolesManager
 
     logger.info(f'[Worker {worker_id}] Начинаем обработку батча из {len(role_ids)} ролей')
 
