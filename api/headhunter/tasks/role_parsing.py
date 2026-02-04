@@ -294,17 +294,18 @@ def parse_vacancies_by_professional_roles(
                         
                         logger.debug(f'Роль {role.name}: API вернул found={total_found}, pages (при per_page=1)={pages_api_info}, пересчитано для per_page={per_page_limit}: {total_pages_api} страниц')
                         
-                        # Рассчитываем оптимальное количество страниц на основе лимита 2000 вакансий
+                        # Рассчитываем оптимальное количество страниц на основе лимита 2000 вакансий.
+                        # Если метаданные от API есть, берем максимум возможного: по лимиту и по количеству страниц в API,
+                        # а параметр pages используем только как fallback, когда инфо от API нет.
                         max_vacancies_limit = 2000
                         if total_found > 0:
                             # Рассчитываем количество страниц для достижения лимита
                             pages_needed_for_limit = (max_vacancies_limit + per_page_limit - 1) // per_page_limit  # Округление вверх
                             
-                            # Берем минимум из: нужного для лимита, доступного в API, запрошенного
+                            # Берем минимум из: нужного для лимита и доступного в API
                             pages_needed = min(
                                 pages_needed_for_limit,
                                 total_pages_api,
-                                actual_pages
                             )
                             
                             actual_pages = pages_needed
