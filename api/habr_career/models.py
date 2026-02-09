@@ -101,9 +101,6 @@ class Vacancy(models.Model):
     
     def create_version(self, new_data=None):
         """Создание новой версии вакансии"""
-        from .models import VacancyVersion, VacancyChangeHistory
-        
-        # Создаем новую версию
         version = VacancyVersion.objects.create(
             vacancy=self,
             version_number=self.current_version + 1

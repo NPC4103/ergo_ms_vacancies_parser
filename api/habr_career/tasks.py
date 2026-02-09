@@ -1,5 +1,5 @@
 from celery import shared_task
-from modules.vacancies_parser.api.habr_career.scripts import parse_habr_vacancies, parse_habr_archived_vacancies, parse_habr_all_vacancies
+from .scripts import parse_habr_vacancies, parse_habr_archived_vacancies, parse_habr_all_vacancies
 
 
 @shared_task(bind=True)
