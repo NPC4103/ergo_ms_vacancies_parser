@@ -128,11 +128,13 @@ class Vacancy(models.Model):
         """Проверка наличия изменений в данных вакансии"""
         changes = {}
         
-        # Список полей для сравнения
         fields_to_compare = [
             'title', 'company_name', 'salary_from', 'salary_to', 'salary_currency',
-            'city', 'description', 'employment_type', 'experience_level', 'qualification',
-            'url', 'company_url', 'marked', 'premium'
+            'salary_gross', 'city', 'address', 'description', 'requirements',
+            'responsibilities', 'employment_type', 'experience_level', 'qualification',
+            'skills', 'specializations', 'divisions', 'schedule_type',
+            'url', 'company_url', 'marked', 'premium', 'has_test',
+            'response_letter_required', 'is_active',
         ]
         
         for field in fields_to_compare:

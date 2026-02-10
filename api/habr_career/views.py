@@ -21,8 +21,8 @@ from .tasks import (
     parse_habr_archived_vacancies_task,
     parse_habr_all_vacancies_task,
 )
-from modules.vacancies_parser.api.core.utils.task_runner import safe_task_run
-from modules.vacancies_parser.api.core.utils.celery_broker import BrokerUnavailableError
+from ..core.utils.task_runner import safe_task_run
+from ..core.utils.celery_broker import BrokerUnavailableError
 
 logger = logging.getLogger('modules.vacancies_parser.habr_career')
 
@@ -56,7 +56,7 @@ class VacancyViewSet(SwaggerSafeMixin, viewsets.ReadOnlyModelViewSet):
         skills = self.request.query_params.getlist('skills')
         if skills:
             for skill in skills:
-                queryset = queryset.filter(skills__icontains=skill)
+                queryset = queryset.filter(skills__contains=[skill])
 
         salary_min = self.request.query_params.get('salary_min')
         salary_max = self.request.query_params.get('salary_max')
@@ -133,7 +133,19 @@ class VacancyViewSet(SwaggerSafeMixin, viewsets.ReadOnlyModelViewSet):
     def stats(self, request):
         """Получить статистику по вакансиям"""
         if self.is_swagger_fake_view():
-            return Response(VacancyStatsSerializer({}).data)
+            empty_stats = {
+                'total_vacancies': 0,
+                'active_vacancies': 0,
+                'avg_salary_from': None,
+                'avg_salary_to': None,
+                'min_salary_from': None,
+                'max_salary_to': None,
+                'vacancies_by_city': {},
+                'vacancies_by_qualification': {},
+                'vacancies_by_experience': {},
+                'recent_vacancies_count': 0,
+            }
+            return Response(VacancyStatsSerializer(empty_stats).data)
 
         queryset = self.get_queryset()
 
@@ -150,20 +162,20 @@ class VacancyViewSet(SwaggerSafeMixin, viewsets.ReadOnlyModelViewSet):
         )
 
         vacancies_by_city = dict(
-            queryset.values('city').annotate(count=Count('id')).values_list('city', 'count')
+            queryset.exclude(city__isnull=True).exclude(city='')
+            .values('city').annotate(count=Count('id'))
+            .values_list('city', 'count')
         )
 
         vacancies_by_qualification = dict(
-            queryset.exclude(qualification__isnull=True)
-            .values('qualification')
-            .annotate(count=Count('id'))
+            queryset.exclude(qualification__isnull=True).exclude(qualification='')
+            .values('qualification').annotate(count=Count('id'))
             .values_list('qualification', 'count')
         )
 
         vacancies_by_experience = dict(
-            queryset.exclude(experience_level__isnull=True)
-            .values('experience_level')
-            .annotate(count=Count('id'))
+            queryset.exclude(experience_level__isnull=True).exclude(experience_level='')
+            .values('experience_level').annotate(count=Count('id'))
             .values_list('experience_level', 'count')
         )
 

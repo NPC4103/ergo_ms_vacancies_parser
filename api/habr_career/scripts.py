@@ -121,94 +121,120 @@ class HabrCareerParser:
             logger.error(f"Ошибка при получении информации о пользователе: {e}")
             return None
     
-    def parse_vacancy(self, vacancy_data):
+    def parse_vacancy(self, vacancy_data, is_archived=False):
         """Парсинг данных вакансии в модель"""
         if not vacancy_data:
             logger.warning("vacancy_data is None")
             return None
-            
+
         try:
-            salary_from = None
-            salary_to = None
-            salary_currency = None
-            
-            salary_info = vacancy_data.get('salary', '')
-            if salary_info:
-                salary_pattern = r'от\s+(\d+)\s+до\s+(\d+)\s+(\w+)'
-                match = re.search(salary_pattern, salary_info)
-                if match:
-                    salary_from = int(match.group(1))
-                    salary_to = int(match.group(2))
-                    salary_currency = match.group(3)
-                else:
-                    from_pattern = r'от\s+(\d+)\s+(\w+)'
-                    match = re.search(from_pattern, salary_info)
-                    if match:
-                        salary_from = int(match.group(1))
-                        salary_currency = match.group(2)
-                    else:
-                        to_pattern = r'до\s+(\d+)\s+(\w+)'
-                        match = re.search(to_pattern, salary_info)
-                        if match:
-                            salary_to = int(match.group(1))
-                            salary_currency = match.group(2)
-            
-            city = vacancy_data.get('city', '')
-            
-            company = vacancy_data.get('company', {})
-            company_name = company.get('name', 'Не указано')
-            company_url = company.get('url')
-            company_alias = company.get('alias_name')
-            company_logo_url = company.get('logo_url')
-            
-            specializations = []
-            for spec in vacancy_data.get('specializations', []):
-                spec_data = {
-                    'id': spec.get('id'),
-                    'title': spec.get('title', {})
-                }
-                specializations.append(spec_data)
-            
-            divisions = vacancy_data.get('divisions', [])
-            
-            published_at_str = vacancy_data.get('published_at')
-            if published_at_str:
-                try:
-                    published_at = datetime.fromisoformat(published_at_str.replace('Z', '+00:00'))
-                    if published_at.tzinfo is None:
-                        published_at = timezone.make_aware(published_at)
-                except ValueError:
-                    published_at = timezone.now()
-            else:
-                published_at = timezone.now()
-            
-            vacancy_data_parsed = {
+            salary_from, salary_to, salary_currency, salary_gross = self._parse_salary(vacancy_data)
+
+            company = vacancy_data.get('company') or {}
+
+            specializations = [
+                {'id': spec.get('id'), 'title': spec.get('title', '')}
+                for spec in vacancy_data.get('specializations', [])
+            ]
+
+            skills = [
+                skill.get('title', '') if isinstance(skill, dict) else str(skill)
+                for skill in vacancy_data.get('skills', [])
+            ]
+
+            published_at = self._parse_datetime(vacancy_data.get('published_at'))
+
+            return {
                 'title': vacancy_data.get('title', ''),
-                'company_name': company_name,
+                'company_name': company.get('name', 'Не указано'),
                 'salary_from': salary_from,
                 'salary_to': salary_to,
                 'salary_currency': salary_currency,
-                'salary_gross': True,
-                'city': city,
+                'salary_gross': salary_gross,
+                'city': vacancy_data.get('city', ''),
+                'address': vacancy_data.get('address') or '',
                 'description': vacancy_data.get('description', ''),
+                'requirements': vacancy_data.get('requirements') or '',
+                'responsibilities': vacancy_data.get('responsibilities') or '',
                 'employment_type': vacancy_data.get('employment_type', ''),
+                'experience_level': (
+                    vacancy_data.get('experience')
+                    or vacancy_data.get('experience_level', '')
+                ),
                 'qualification': vacancy_data.get('qualification'),
+                'skills': skills,
                 'specializations': specializations,
-                'divisions': divisions,
+                'divisions': vacancy_data.get('divisions', []),
+                'schedule_type': (
+                    vacancy_data.get('schedule')
+                    or vacancy_data.get('schedule_type', '')
+                ),
                 'habr_id': str(vacancy_data.get('id', '')),
                 'url': vacancy_data.get('url', ''),
-                'company_url': company_url,
-                'company_alias': company_alias,
-                'company_logo_url': company_logo_url,
+                'company_url': company.get('url'),
+                'company_alias': company.get('alias_name'),
+                'company_logo_url': company.get('logo_url'),
                 'marked': vacancy_data.get('marked', False),
+                'premium': vacancy_data.get('premium', False),
+                'has_test': vacancy_data.get('has_test', False),
+                'response_letter_required': vacancy_data.get('response_letter_required', False),
+                'is_active': not is_archived,
                 'published_at': published_at,
             }
-            
-            return vacancy_data_parsed
-            
+
         except Exception as e:
             logger.error(f"Ошибка при парсинге вакансии: {e}", exc_info=True)
             return None
+
+    def _parse_salary(self, vacancy_data):
+        """Парсинг информации о зарплате из ответа API"""
+        salary_from = None
+        salary_to = None
+        salary_currency = None
+        salary_gross = True
+
+        salary_info = vacancy_data.get('salary')
+
+        if isinstance(salary_info, dict):
+            salary_from = salary_info.get('from') or salary_info.get('salary_from')
+            salary_to = salary_info.get('to') or salary_info.get('salary_to')
+            salary_currency = salary_info.get('currency')
+            salary_gross = salary_info.get('gross', True)
+            return salary_from, salary_to, salary_currency, salary_gross
+
+        if isinstance(salary_info, str) and salary_info:
+            salary_gross = 'на руки' not in salary_info.lower()
+
+            match = re.search(r'от\s+([\d\s]+)\s+до\s+([\d\s]+)\s+(\w+)', salary_info)
+            if match:
+                salary_from = int(match.group(1).replace(' ', ''))
+                salary_to = int(match.group(2).replace(' ', ''))
+                salary_currency = match.group(3)
+            else:
+                match = re.search(r'от\s+([\d\s]+)\s+(\w+)', salary_info)
+                if match:
+                    salary_from = int(match.group(1).replace(' ', ''))
+                    salary_currency = match.group(2)
+                else:
+                    match = re.search(r'до\s+([\d\s]+)\s+(\w+)', salary_info)
+                    if match:
+                        salary_to = int(match.group(1).replace(' ', ''))
+                        salary_currency = match.group(2)
+
+        return salary_from, salary_to, salary_currency, salary_gross
+
+    def _parse_datetime(self, dt_str):
+        """Парсинг даты из строки ISO 8601"""
+        if not dt_str:
+            return timezone.now()
+
+        try:
+            parsed = datetime.fromisoformat(dt_str.replace('Z', '+00:00'))
+            if parsed.tzinfo is None:
+                parsed = timezone.make_aware(parsed)
+            return parsed
+        except (ValueError, TypeError):
+            return timezone.now()
     
     def save_vacancy(self, vacancy_data):
         """Сохранение вакансии в базу данных"""
@@ -375,7 +401,7 @@ def parse_habr_archived_vacancies(access_token, pages=5, delay=1.0):
                 logger.debug(f"Обрабатываем архивную вакансию {i}/{len(vacancies)}: "
                              f"{vacancy_data.get('title', 'Без названия')}")
                 
-                parsed_data = parser.parse_vacancy(vacancy_data)
+                parsed_data = parser.parse_vacancy(vacancy_data, is_archived=True)
                 if parsed_data:
                     saved_vacancy = parser.save_vacancy(parsed_data)
                     if saved_vacancy:
