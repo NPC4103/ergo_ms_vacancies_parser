@@ -7,41 +7,62 @@ from django.db.models import Count, Avg, Min, Max, Q
 from django.utils import timezone
 from datetime import timedelta
 import logging
+import os
 
 from src.core.utils.mixins import SwaggerSafeMixin
-from .models import Vacancy, VacancyVersion
+from .models import SuperJobVacancy, SuperJobVacancyVersion
 from .serializers import (
     VacancyListSerializer, VacancyDetailSerializer, VacancyVersionSerializer,
-    VacancyChangeHistorySerializer, VacancyStatsSerializer,
-    ParsingTaskStatusSerializer, OAuthStatusSerializer
+    VacancyChangeHistorySerializer, VacancyStatsSerializer, ParsingTaskStatusSerializer
 )
 from .tasks import (
-    parse_habr_vacancies_task, parse_habr_archived_vacancies_task,
-    parse_habr_all_vacancies_task
+    parse_superjob_vacancies_task,
+    parse_all_superjob_vacancies_task,
+    get_superjob_vacancy_details_task,
+    parse_superjob_vacancies_by_config_task,
 )
-from .oauth import HabrCareerOAuth
 from celery.result import AsyncResult
 from modules.vacancies_parser.api.core.utils.task_runner import safe_task_run
 from modules.vacancies_parser.api.core.utils.celery_broker import BrokerUnavailableError
 
-logger = logging.getLogger('modules.vacancies_parser.habr_career')
+logger = logging.getLogger('modules.vacancies_parser.superjob')
+
+
+def _resolve_api_key(request):
+    """Получает API ключ SuperJob: из тела запроса или из переменных окружения."""
+    api_key = request.data.get('api_key')
+    if api_key:
+        return api_key, None
+
+    api_key = os.environ.get('SUPERJOB_API_KEY')
+    if api_key:
+        return api_key, None
+
+    error_resp = Response(
+        {
+            'error': 'Нет API ключа SuperJob. Передайте его в запросе (api_key) '
+                     'или укажите в переменной окружения SUPERJOB_API_KEY.'
+        },
+        status=status.HTTP_401_UNAUTHORIZED
+    )
+    return None, error_resp
 
 
 class VacancyViewSet(SwaggerSafeMixin, viewsets.ReadOnlyModelViewSet):
-    """ViewSet для работы с вакансиями Хабр Карьеры"""
+    """ViewSet для работы с вакансиями SuperJob"""
     permission_classes = [permissions.IsAuthenticated]
     filter_backends = [DjangoFilterBackend, SearchFilter, OrderingFilter]
-    search_fields = ['title', 'company_name', 'description', 'city', 'qualification']
+    search_fields = ['title', 'company_name', 'description', 'city', 'professional_role']
     ordering_fields = ['published_at', 'created_at', 'salary_from', 'salary_to', 'title']
     ordering = ['-published_at']
     filterset_fields = {
         'city': ['exact', 'icontains'],
         'employment_type': ['exact'],
         'experience_level': ['exact'],
-        'qualification': ['exact', 'icontains'],
+        'professional_role': ['exact', 'icontains'],
         'is_active': ['exact'],
         'premium': ['exact'],
-        'schedule_type': ['exact'],
+        'employer_trusted': ['exact'],
         'published_at': ['gte', 'lte', 'exact'],
         'salary_from': ['gte'],
         'salary_to': ['lte'],
@@ -49,14 +70,14 @@ class VacancyViewSet(SwaggerSafeMixin, viewsets.ReadOnlyModelViewSet):
 
     def get_queryset(self):
         if self.is_swagger_fake_view():
-            return Vacancy.objects.none()
+            return SuperJobVacancy.objects.none()
 
-        queryset = Vacancy.objects.all()
+        queryset = SuperJobVacancy.objects.all()
 
-        skills = self.request.query_params.getlist('skills')
-        if skills:
-            for skill in skills:
-                queryset = queryset.filter(skills__icontains=skill)
+        key_skills = self.request.query_params.getlist('key_skills')
+        if key_skills:
+            for skill in key_skills:
+                queryset = queryset.filter(key_skills__icontains=skill)
 
         salary_min = self.request.query_params.get('salary_min')
         salary_max = self.request.query_params.get('salary_max')
@@ -100,7 +121,7 @@ class VacancyViewSet(SwaggerSafeMixin, viewsets.ReadOnlyModelViewSet):
             version = vacancy.versions.get(version_number=int(version_number))
             serializer = VacancyVersionSerializer(version)
             return Response(serializer.data)
-        except VacancyVersion.DoesNotExist:
+        except SuperJobVacancyVersion.DoesNotExist:
             return Response(
                 {'error': 'Версия не найдена'},
                 status=status.HTTP_404_NOT_FOUND
@@ -118,7 +139,7 @@ class VacancyViewSet(SwaggerSafeMixin, viewsets.ReadOnlyModelViewSet):
                     version_number=int(version_number)
                 )
                 changes = version.changes.all().select_related('vacancy', 'version')
-            except VacancyVersion.DoesNotExist:
+            except SuperJobVacancyVersion.DoesNotExist:
                 return Response(
                     {'error': 'Версия не найдена'},
                     status=status.HTTP_404_NOT_FOUND
@@ -146,19 +167,19 @@ class VacancyViewSet(SwaggerSafeMixin, viewsets.ReadOnlyModelViewSet):
             avg_salary_from=Avg('salary_from'),
             avg_salary_to=Avg('salary_to'),
             min_salary_from=Min('salary_from'),
-            max_salary_to=Max('salary_to')
+            max_salary_to=Max('salary_to'),
         )
 
         vacancies_by_city = dict(
             queryset.values('city').annotate(count=Count('id')).values_list('city', 'count')
         )
 
-        vacancies_by_qualification = dict(
-            queryset.exclude(qualification__isnull=True)
-            .exclude(qualification='')
-            .values('qualification')
+        vacancies_by_role = dict(
+            queryset.exclude(professional_role__isnull=True)
+            .exclude(professional_role='')
+            .values('professional_role')
             .annotate(count=Count('id'))
-            .values_list('qualification', 'count')
+            .values_list('professional_role', 'count')
         )
 
         vacancies_by_experience = dict(
@@ -171,6 +192,7 @@ class VacancyViewSet(SwaggerSafeMixin, viewsets.ReadOnlyModelViewSet):
 
         recent_date = timezone.now() - timedelta(days=7)
         recent_vacancies_count = queryset.filter(published_at__gte=recent_date).count()
+        premium_vacancies_count = queryset.filter(premium=True).count()
 
         stats_data = {
             'total_vacancies': total_vacancies,
@@ -180,9 +202,10 @@ class VacancyViewSet(SwaggerSafeMixin, viewsets.ReadOnlyModelViewSet):
             'min_salary_from': salary_stats['min_salary_from'],
             'max_salary_to': salary_stats['max_salary_to'],
             'vacancies_by_city': vacancies_by_city,
-            'vacancies_by_qualification': vacancies_by_qualification,
+            'vacancies_by_role': vacancies_by_role,
             'vacancies_by_experience': vacancies_by_experience,
             'recent_vacancies_count': recent_vacancies_count,
+            'premium_vacancies_count': premium_vacancies_count,
         }
 
         serializer = VacancyStatsSerializer(stats_data)
@@ -206,7 +229,7 @@ class VacancyViewSet(SwaggerSafeMixin, viewsets.ReadOnlyModelViewSet):
                 'status': task_result.status,
                 'progress': None,
                 'result': None,
-                'error': None
+                'error': None,
             }
 
             if task_result.ready():
@@ -227,223 +250,62 @@ class VacancyViewSet(SwaggerSafeMixin, viewsets.ReadOnlyModelViewSet):
             )
 
 
-class OAuthViewSet(SwaggerSafeMixin, viewsets.ViewSet):
-    """
-    ViewSet для OAuth 2.0 авторизации с Хабр Карьерой.
-
-    Токены:
-    - JWT (системный) — для авторизации в ERGO MS API, передаётся в заголовке Authorization.
-    - Habr Career OAuth token — для доступа к API Хабр Карьеры, хранится в БД.
-
-    Флоу:
-    1. GET /authorize/ (JWT) — возвращает URL для авторизации на Хабр Карьере.
-    2. Пользователь открывает URL в браузере, авторизуется на Хабре.
-    3. Хабр редиректит на GET /callback/?code=...&state=... (без JWT, state идентифицирует пользователя).
-    4. Callback обменивает code на Habr Career token и сохраняет в БД.
-    """
-
-    def get_permissions(self):
-        if self.action == 'callback':
-            return [permissions.AllowAny()]
-        return [permissions.IsAuthenticated()]
-
-    @action(detail=False, methods=['get'])
-    def authorize(self, request):
-        """
-        Возвращает URL для авторизации на Хабр Карьере.
-        Пользователь должен открыть этот URL в браузере.
-        """
-        oauth = HabrCareerOAuth()
-        url = oauth.get_authorization_url(request.user)
-        return Response({
-            'authorization_url': url,
-            'instruction': 'Откройте authorization_url в браузере для авторизации на Хабр Карьере.'
-        })
-
-    @action(detail=False, methods=['get'])
-    def callback(self, request):
-        """
-        Callback от Хабр Карьеры (вызывается браузером после авторизации).
-        Не требует JWT — пользователь определяется по подписанному state-параметру.
-        """
-        error = request.query_params.get('error')
-        if error:
-            return Response(
-                {'error': f'Хабр Карьера вернула ошибку: {error}'},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-
-        state = request.query_params.get('state')
-        if not state:
-            return Response(
-                {'error': 'Отсутствует state-параметр'},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-
-        user = HabrCareerOAuth.verify_state(state)
-        if not user:
-            return Response(
-                {'error': 'Невалидный или просроченный state. Повторите авторизацию.'},
-                status=status.HTTP_403_FORBIDDEN
-            )
-
-        code = request.query_params.get('code')
-        if not code:
-            return Response(
-                {'error': 'Не получен authorization code'},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-
-        oauth = HabrCareerOAuth()
-        token_data = oauth.exchange_code(code)
-
-        if not token_data or 'access_token' not in token_data:
-            return Response(
-                {'error': 'Не удалось получить access_token от Хабр Карьеры'},
-                status=status.HTTP_502_BAD_GATEWAY
-            )
-
-        oauth.save_token(user, token_data)
-
-        return Response({
-            'status': 'connected',
-            'message': 'Хабр Карьера успешно подключена. Можете закрыть эту вкладку.'
-        })
-
-    @action(detail=False, methods=['get'])
-    def status(self, request):
-        """Проверяет статус OAuth-подключения текущего пользователя"""
-        if self.is_swagger_fake_view():
-            return Response(OAuthStatusSerializer({}).data)
-
-        token_status = HabrCareerOAuth.get_token_status(request.user)
-        serializer = OAuthStatusSerializer(token_status)
-        return Response(serializer.data)
-
-    @action(detail=False, methods=['post'])
-    def revoke(self, request):
-        """Отключает Хабр Карьеру (удаляет токен)"""
-        deleted = HabrCareerOAuth.revoke_token(request.user)
-
-        if deleted:
-            return Response({'message': 'Токен удалён, Хабр Карьера отключена'})
-        return Response(
-            {'error': 'Токен не найден'},
-            status=status.HTTP_404_NOT_FOUND
-        )
-
-
-def _resolve_access_token(request):
-    """
-    Получает access_token: из тела запроса (приоритет) или из БД пользователя.
-    Возвращает (access_token, error_response).
-    """
-    access_token = request.data.get('access_token')
-    if access_token:
-        return access_token, None
-
-    oauth = HabrCareerOAuth()
-    access_token = oauth.get_valid_token(request.user)
-    if access_token:
-        return access_token, None
-
-    error_resp = Response(
-        {
-            'error': 'Нет access_token. Передайте его в запросе или '
-                     'подключите Хабр Карьеру через OAuth (GET /oauth/authorize/).'
-        },
-        status=status.HTTP_401_UNAUTHORIZED
-    )
-    return None, error_resp
-
-
 class ParsingControlViewSet(SwaggerSafeMixin, viewsets.ViewSet):
-    """ViewSet для управления парсингом вакансий Хабр Карьеры"""
+    """ViewSet для управления парсингом вакансий SuperJob"""
     permission_classes = [permissions.IsAuthenticated]
 
     @action(detail=False, methods=['post'])
-    def parse_active(self, request):
-        """Запустить парсинг активных вакансий"""
-        access_token, err = _resolve_access_token(request)
+    def parse_by_text(self, request):
+        """Запустить парсинг вакансий по текстовому запросу"""
+        api_key, err = _resolve_api_key(request)
         if err:
             return err
 
-        pages = request.data.get('pages', 5)
-        delay = request.data.get('delay', 1.0)
-        get_details = request.data.get('get_details', True)
-
-        try:
-            result = safe_task_run(
-                parse_habr_vacancies_task,
-                {
-                    'access_token': access_token,
-                    'pages': pages,
-                    'delay': delay,
-                    'get_details': get_details
-                },
-                prefer_async=True,
-                fallback_to_sync=False
-            )
-
-            return Response({
-                'task_id': result.id,
-                'status': 'started',
-                'message': 'Парсинг активных вакансий запущен'
-            }, status=status.HTTP_202_ACCEPTED)
-        except BrokerUnavailableError as e:
-            logger.error(f'Ошибка брокера при запуске парсинга активных вакансий: {str(e)}')
-            return Response({
-                'error': f'Celery брокер недоступен: {str(e)}',
-                'broker_error': True,
-                'suggestion': 'Запустите Celery worker: ergoms start-worker'
-            }, status=status.HTTP_503_SERVICE_UNAVAILABLE)
-        except Exception as e:
-            logger.error(
-                f'Ошибка при запуске парсинга активных вакансий: {str(e)}', exc_info=True
-            )
+        text = request.data.get('text')
+        if not text:
             return Response(
-                {'error': f'Ошибка при запуске задачи: {str(e)}'},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+                {'error': 'Не указан текст для поиска (text)'},
+                status=status.HTTP_400_BAD_REQUEST
             )
 
-    @action(detail=False, methods=['post'])
-    def parse_archived(self, request):
-        """Запустить парсинг архивных вакансий"""
-        access_token, err = _resolve_access_token(request)
-        if err:
-            return err
-
-        pages = request.data.get('pages', 5)
+        town = request.data.get('town')
+        experience = request.data.get('experience')
+        employment = request.data.get('employment')
+        schedule = request.data.get('schedule')
+        max_pages = request.data.get('max_pages', 5)
         delay = request.data.get('delay', 1.0)
 
         try:
             result = safe_task_run(
-                parse_habr_archived_vacancies_task,
+                parse_superjob_vacancies_task,
                 {
-                    'access_token': access_token,
-                    'pages': pages,
-                    'delay': delay
+                    'text': text,
+                    'town': town,
+                    'experience': experience,
+                    'employment': employment,
+                    'schedule': schedule,
+                    'max_pages': max_pages,
+                    'delay': delay,
+                    'api_key': api_key,
                 },
                 prefer_async=True,
-                fallback_to_sync=False
+                fallback_to_sync=False,
             )
 
             return Response({
                 'task_id': result.id,
                 'status': 'started',
-                'message': 'Парсинг архивных вакансий запущен'
+                'message': f'Парсинг вакансий по запросу "{text}" запущен',
             }, status=status.HTTP_202_ACCEPTED)
         except BrokerUnavailableError as e:
-            logger.error(f'Ошибка брокера при запуске парсинга архивных вакансий: {str(e)}')
+            logger.error(f'Ошибка брокера при запуске парсинга по тексту: {str(e)}')
             return Response({
                 'error': f'Celery брокер недоступен: {str(e)}',
                 'broker_error': True,
-                'suggestion': 'Запустите Celery worker: ergoms start-worker'
+                'suggestion': 'Запустите Celery worker: ergoms start-worker',
             }, status=status.HTTP_503_SERVICE_UNAVAILABLE)
         except Exception as e:
-            logger.error(
-                f'Ошибка при запуске парсинга архивных вакансий: {str(e)}', exc_info=True
-            )
+            logger.error(f'Ошибка при запуске парсинга по тексту: {str(e)}', exc_info=True)
             return Response(
                 {'error': f'Ошибка при запуске задачи: {str(e)}'},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
@@ -451,43 +313,119 @@ class ParsingControlViewSet(SwaggerSafeMixin, viewsets.ViewSet):
 
     @action(detail=False, methods=['post'])
     def parse_all(self, request):
-        """Запустить парсинг всех вакансий (активных и архивных)"""
-        access_token, err = _resolve_access_token(request)
+        """Запустить универсальный парсинг всех вакансий"""
+        api_key, err = _resolve_api_key(request)
         if err:
             return err
 
-        pages = request.data.get('pages', 5)
+        max_pages_per_query = request.data.get('max_pages_per_query', 3)
         delay = request.data.get('delay', 1.0)
-        get_details = request.data.get('get_details', True)
 
         try:
             result = safe_task_run(
-                parse_habr_all_vacancies_task,
+                parse_all_superjob_vacancies_task,
                 {
-                    'access_token': access_token,
-                    'pages': pages,
+                    'max_pages_per_query': max_pages_per_query,
                     'delay': delay,
-                    'get_details': get_details
+                    'api_key': api_key,
                 },
                 prefer_async=True,
-                fallback_to_sync=False
+                fallback_to_sync=False,
             )
 
             return Response({
                 'task_id': result.id,
                 'status': 'started',
-                'message': 'Парсинг всех вакансий запущен'
+                'message': 'Универсальный парсинг вакансий SuperJob запущен',
             }, status=status.HTTP_202_ACCEPTED)
         except BrokerUnavailableError as e:
-            logger.error(f'Ошибка брокера при запуске парсинга всех вакансий: {str(e)}')
+            logger.error(f'Ошибка брокера при запуске универсального парсинга: {str(e)}')
             return Response({
                 'error': f'Celery брокер недоступен: {str(e)}',
                 'broker_error': True,
-                'suggestion': 'Запустите Celery worker: ergoms start-worker'
+                'suggestion': 'Запустите Celery worker: ergoms start-worker',
+            }, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+        except Exception as e:
+            logger.error(f'Ошибка при запуске универсального парсинга: {str(e)}', exc_info=True)
+            return Response(
+                {'error': f'Ошибка при запуске задачи: {str(e)}'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+    @action(detail=False, methods=['post'])
+    def parse_by_config(self, request):
+        """Запустить парсинг по переданной конфигурации"""
+        api_key, err = _resolve_api_key(request)
+        if err:
+            return err
+
+        config = request.data.get('config', {})
+        config['api_key'] = api_key
+
+        try:
+            result = safe_task_run(
+                parse_superjob_vacancies_by_config_task,
+                {'config': config},
+                prefer_async=True,
+                fallback_to_sync=False,
+            )
+
+            return Response({
+                'task_id': result.id,
+                'status': 'started',
+                'message': 'Парсинг вакансий по конфигурации запущен',
+            }, status=status.HTTP_202_ACCEPTED)
+        except BrokerUnavailableError as e:
+            logger.error(f'Ошибка брокера при запуске парсинга по конфигу: {str(e)}')
+            return Response({
+                'error': f'Celery брокер недоступен: {str(e)}',
+                'broker_error': True,
+                'suggestion': 'Запустите Celery worker: ergoms start-worker',
+            }, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+        except Exception as e:
+            logger.error(f'Ошибка при запуске парсинга по конфигу: {str(e)}', exc_info=True)
+            return Response(
+                {'error': f'Ошибка при запуске задачи: {str(e)}'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+    @action(detail=False, methods=['post'])
+    def get_details(self, request):
+        """Получить детальную информацию о конкретной вакансии"""
+        api_key, err = _resolve_api_key(request)
+        if err:
+            return err
+
+        vacancy_id = request.data.get('vacancy_id')
+        if not vacancy_id:
+            return Response(
+                {'error': 'Не указан vacancy_id'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        try:
+            result = safe_task_run(
+                get_superjob_vacancy_details_task,
+                {'vacancy_id': str(vacancy_id), 'api_key': api_key},
+                prefer_async=True,
+                fallback_to_sync=False,
+            )
+
+            return Response({
+                'task_id': result.id,
+                'status': 'started',
+                'message': f'Получение деталей вакансии {vacancy_id} запущено',
+            }, status=status.HTTP_202_ACCEPTED)
+        except BrokerUnavailableError as e:
+            logger.error(f'Ошибка брокера при получении деталей вакансии {vacancy_id}: {str(e)}')
+            return Response({
+                'error': f'Celery брокер недоступен: {str(e)}',
+                'broker_error': True,
+                'suggestion': 'Запустите Celery worker: ergoms start-worker',
             }, status=status.HTTP_503_SERVICE_UNAVAILABLE)
         except Exception as e:
             logger.error(
-                f'Ошибка при запуске парсинга всех вакансий: {str(e)}', exc_info=True
+                f'Ошибка при получении деталей вакансии {vacancy_id}: {str(e)}', exc_info=True
             )
             return Response(
                 {'error': f'Ошибка при запуске задачи: {str(e)}'},
