@@ -1,5 +1,36 @@
+from django.conf import settings
 from django.db import models
 from django.utils import timezone
+
+
+class OAuthToken(models.Model):
+    """Хранение OAuth-токенов Хабр Карьеры, привязанных к пользователю системы"""
+
+    user = models.OneToOneField(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='habr_career_token',
+        verbose_name="Пользователь"
+    )
+    access_token = models.TextField(verbose_name="Access Token")
+    refresh_token = models.TextField(null=True, blank=True, verbose_name="Refresh Token")
+    expires_at = models.DateTimeField(null=True, blank=True, verbose_name="Истекает")
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name="Создан")
+    updated_at = models.DateTimeField(auto_now=True, verbose_name="Обновлён")
+
+    class Meta:
+        verbose_name = "OAuth токен Хабр Карьера"
+        verbose_name_plural = "OAuth токены Хабр Карьера"
+        db_table = 'vpm_hc_oauth_token'
+
+    def __str__(self):
+        return f"OAuth токен для {self.user}"
+
+    @property
+    def is_expired(self):
+        if not self.expires_at:
+            return False
+        return timezone.now() >= self.expires_at
 
 
 class Vacancy(models.Model):
@@ -101,9 +132,6 @@ class Vacancy(models.Model):
     
     def create_version(self, new_data=None):
         """Создание новой версии вакансии"""
-        from .models import VacancyVersion, VacancyChangeHistory
-        
-        # Создаем новую версию
         version = VacancyVersion.objects.create(
             vacancy=self,
             version_number=self.current_version + 1
@@ -131,11 +159,13 @@ class Vacancy(models.Model):
         """Проверка наличия изменений в данных вакансии"""
         changes = {}
         
-        # Список полей для сравнения
         fields_to_compare = [
             'title', 'company_name', 'salary_from', 'salary_to', 'salary_currency',
-            'city', 'description', 'employment_type', 'experience_level', 'qualification',
-            'url', 'company_url', 'marked', 'premium'
+            'salary_gross', 'city', 'address', 'description', 'requirements',
+            'responsibilities', 'employment_type', 'experience_level', 'qualification',
+            'skills', 'specializations', 'divisions', 'schedule_type',
+            'url', 'company_url', 'marked', 'premium', 'has_test',
+            'response_letter_required', 'is_active',
         ]
         
         for field in fields_to_compare:
