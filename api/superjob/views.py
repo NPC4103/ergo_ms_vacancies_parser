@@ -20,7 +20,9 @@ from .tasks import (
     parse_all_superjob_vacancies_task,
     get_superjob_vacancy_details_task,
     parse_superjob_vacancies_by_config_task,
+    parse_superjob_by_catalogues_task,
 )
+from .scripts import get_catalogues_list
 from celery.result import AsyncResult
 from modules.vacancies_parser.api.core.utils.task_runner import safe_task_run
 from modules.vacancies_parser.api.core.utils.celery_broker import BrokerUnavailableError
@@ -386,6 +388,73 @@ class ParsingControlViewSet(SwaggerSafeMixin, viewsets.ViewSet):
             logger.error(f'Ошибка при запуске парсинга по конфигу: {str(e)}', exc_info=True)
             return Response(
                 {'error': f'Ошибка при запуске задачи: {str(e)}'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+    @action(detail=False, methods=['post'])
+    def parse_by_catalogues(self, request):
+        """Запустить парсинг вакансий по каталогам (отраслям) SuperJob"""
+        api_key, err = _resolve_api_key(request)
+        if err:
+            return err
+
+        catalogue_ids = request.data.get('catalogue_ids')
+        max_pages = request.data.get('max_pages_per_catalogue', 10)
+        delay = request.data.get('delay', 1.0)
+
+        try:
+            result = safe_task_run(
+                parse_superjob_by_catalogues_task,
+                {
+                    'catalogue_ids': catalogue_ids,
+                    'max_pages_per_catalogue': max_pages,
+                    'delay': delay,
+                    'api_key': api_key,
+                },
+                prefer_async=True,
+                fallback_to_sync=False,
+            )
+
+            mode = f"{len(catalogue_ids)} выбранных" if catalogue_ids else "всех"
+            return Response({
+                'task_id': result.id,
+                'status': 'started',
+                'message': f'Парсинг вакансий по каталогам ({mode}) запущен',
+            }, status=status.HTTP_202_ACCEPTED)
+        except BrokerUnavailableError as e:
+            logger.error(f'Ошибка брокера при парсинге по каталогам: {str(e)}')
+            return Response({
+                'error': f'Celery брокер недоступен: {str(e)}',
+                'broker_error': True,
+                'suggestion': 'Запустите Celery worker: ergoms start-worker',
+            }, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+        except Exception as e:
+            logger.error(f'Ошибка при запуске парсинга по каталогам: {str(e)}', exc_info=True)
+            return Response(
+                {'error': f'Ошибка при запуске задачи: {str(e)}'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+    @action(detail=False, methods=['get'])
+    def catalogues(self, request):
+        """Получить список каталогов (отраслей) SuperJob"""
+        api_key = os.environ.get('SUPERJOB_API_KEY')
+        if not api_key:
+            return Response(
+                {'error': 'SUPERJOB_API_KEY не указан в переменных окружения'},
+                status=status.HTTP_401_UNAUTHORIZED
+            )
+
+        try:
+            result = get_catalogues_list(api_key)
+            return Response({
+                'total': len(result),
+                'catalogues': result,
+            })
+        except Exception as e:
+            logger.error(f'Ошибка при получении каталогов: {str(e)}', exc_info=True)
+            return Response(
+                {'error': f'Ошибка при получении каталогов: {str(e)}'},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
 

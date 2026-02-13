@@ -97,6 +97,18 @@ class SuperJobAPIClient:
             logger.error(f"Ошибка при получении деталей вакансии {vacancy_id}: {e}")
             return None
 
+    def get_catalogues(self) -> List[Dict[str, Any]]:
+        """Получение списка всех каталогов (отраслей) SuperJob."""
+        url = f"{self.BASE_URL}/catalogues/"
+
+        try:
+            response = requests.get(url, headers=self.headers, timeout=30)
+            response.raise_for_status()
+            return response.json()
+        except requests.RequestException as e:
+            logger.error(f"Ошибка при получении каталогов SuperJob: {e}")
+            return []
+
 
 def _parse_unixtime(timestamp) -> Optional[datetime]:
     """Безопасный парсинг unix timestamp в aware datetime."""
@@ -126,6 +138,29 @@ def _map_object_field(data: Dict, field: str, mapping: Dict) -> Optional[str]:
     if obj_id in mapping:
         return mapping[obj_id]
     return obj.get('title')
+
+
+def _build_full_description(vacancy_data: Dict[str, Any]) -> str:
+    """Собирает полное описание вакансии из всех разделов ответа API."""
+    sections = []
+
+    work = vacancy_data.get('work')
+    if work:
+        sections.append(f"Обязанности:\n{work}")
+
+    candidat = vacancy_data.get('candidat')
+    if candidat:
+        sections.append(f"Требования:\n{candidat}")
+
+    compensation = vacancy_data.get('compensation')
+    if compensation:
+        sections.append(f"Условия:\n{compensation}")
+
+    firm_activity = vacancy_data.get('firm_activity')
+    if firm_activity:
+        sections.append(f"О компании:\n{firm_activity}")
+
+    return '\n\n'.join(sections)
 
 
 def parse_vacancy_data(vacancy_data: Dict[str, Any]) -> Dict[str, Any]:
@@ -158,7 +193,7 @@ def parse_vacancy_data(vacancy_data: Dict[str, Any]) -> Dict[str, Any]:
         'salary_gross': not vacancy_data.get('agreement', False),
         'city': _extract_object_field(vacancy_data, 'town'),
         'address': vacancy_data.get('address') or '',
-        'description': vacancy_data.get('work') or vacancy_data.get('candidat', ''),
+        'description': _build_full_description(vacancy_data),
         'requirements': vacancy_data.get('candidat', ''),
         'responsibilities': vacancy_data.get('work', ''),
         'employment_type': _map_object_field(vacancy_data, 'type_of_work', EMPLOYMENT_TYPE_MAP),
@@ -207,14 +242,15 @@ def save_vacancy_to_db(vacancy_data: Dict[str, Any]) -> Optional[SuperJobVacancy
         return None
 
 
-def parse_vacancies_by_text(text: str,
-                            town: str = None,
-                            experience: int = None,
-                            employment: int = None,
-                            schedule: int = None,
-                            max_pages: int = 5,
-                            delay: float = 1.0,
-                            api_key: str = None) -> Dict[str, Any]:
+def parse_vacancies_by_text(
+    text: str,
+    town: str = None,
+    experience: int = None,
+    employment: int = None,
+    schedule: int = None,
+    max_pages: int = 5,
+    delay: float = 1.0,
+    api_key: str = None) -> Dict[str, Any]:
     """Парсинг вакансий по текстовому запросу."""
     client = SuperJobAPIClient(api_key)
     total_vacancies = 0
@@ -341,6 +377,157 @@ def parse_all_vacancies(max_pages_per_query: int = 3,
 
     logger.info(f"Универсальный парсинг завершен: {total_results}")
     return total_results
+
+
+def parse_vacancies_by_catalogue(catalogue_id: int, catalogue_title: str = '', max_pages: int = 10, 
+    delay: float = 1.0, api_key: str = None) -> Dict[str, Any]:
+    """Парсинг вакансий по конкретному каталогу (отрасли)."""
+    client = SuperJobAPIClient(api_key)
+    total_vacancies = 0
+    saved_vacancies = 0
+    updated_vacancies = 0
+    errors = 0
+
+    logger.info(f"Парсинг каталога '{catalogue_title}' (id={catalogue_id})")
+
+    for page in range(max_pages):
+        try:
+            search_result = client.search_vacancies(
+                catalogues=str(catalogue_id),
+                page=page,
+                count=100,
+            )
+
+            vacancies = search_result.get('objects', [])
+            if not vacancies:
+                break
+
+            total_vacancies += len(vacancies)
+
+            for vac_data in vacancies:
+                try:
+                    parsed = parse_vacancy_data(vac_data)
+                    vacancy = save_vacancy_to_db(parsed)
+                    if vacancy:
+                        if vacancy.current_version == 1:
+                            saved_vacancies += 1
+                        else:
+                            updated_vacancies += 1
+                    else:
+                        errors += 1
+                except Exception as e:
+                    logger.error(f"Ошибка при обработке вакансии: {e}")
+                    errors += 1
+
+            if not search_result.get('more', False):
+                break
+
+            if page < max_pages - 1:
+                time.sleep(delay)
+
+        except Exception as e:
+            logger.error(f"Ошибка на странице {page + 1} каталога '{catalogue_title}': {e}")
+            errors += 1
+
+    logger.info(
+        f"Каталог '{catalogue_title}': найдено вакансий={total_vacancies}, "
+        f"сохранено={saved_vacancies}, обновлено={updated_vacancies}"
+    )
+
+    return {
+        'catalogue_id': catalogue_id,
+        'catalogue_title': catalogue_title,
+        'total_vacancies': total_vacancies,
+        'saved_vacancies': saved_vacancies,
+        'updated_vacancies': updated_vacancies,
+        'errors': errors,
+    }
+
+
+def parse_vacancies_by_catalogues(catalogue_ids: List[int] = None,max_pages_per_catalogue: int = 10,
+    delay: float = 1.0, api_key: str = None) -> Dict[str, Any]:
+    """
+    Парсинг вакансий по каталогам (отраслям) SuperJob.
+
+    Если catalogue_ids не указаны, загружаются все каталоги с API
+    и парсятся последовательно. Это самый эффективный способ
+    покрыть все вакансии без дубликатов.
+    """
+    client = SuperJobAPIClient(api_key)
+
+    if catalogue_ids:
+        catalogues = [{'key': cid, 'title': f'Каталог {cid}'} for cid in catalogue_ids]
+    else:
+        raw_catalogues = client.get_catalogues()
+        if not raw_catalogues:
+            logger.error("Не удалось получить список каталогов SuperJob")
+            return {
+                'total_catalogues': 0, 'catalogues_processed': 0,
+                'total_vacancies': 0, 'total_saved': 0,
+                'total_updated': 0, 'total_errors': 1,
+                'catalogues_failed': 1,
+            }
+        catalogues = [{'key': c['key'], 'title': c.get('title', '')} for c in raw_catalogues]
+
+    total_results = {
+        'total_catalogues': len(catalogues),
+        'catalogues_processed': 0,
+        'catalogues_failed': 0,
+        'total_vacancies': 0,
+        'total_saved': 0,
+        'total_updated': 0,
+        'total_errors': 0,
+    }
+
+    logger.info(f"Парсинг по каталогам: {len(catalogues)} каталогов")
+
+    for i, cat in enumerate(catalogues, 1):
+        try:
+            logger.info(f"Каталог {i}/{len(catalogues)}: '{cat['title']}' (id={cat['key']})")
+
+            result = parse_vacancies_by_catalogue(
+                catalogue_id=cat['key'],
+                catalogue_title=cat['title'],
+                max_pages=max_pages_per_catalogue,
+                delay=delay,
+                api_key=api_key,
+            )
+
+            total_results['total_vacancies'] += result['total_vacancies']
+            total_results['total_saved'] += result['saved_vacancies']
+            total_results['total_updated'] += result['updated_vacancies']
+            total_results['total_errors'] += result['errors']
+            total_results['catalogues_processed'] += 1
+
+        except Exception as e:
+            logger.error(f"Ошибка при обработке каталога '{cat['title']}': {e}")
+            total_results['catalogues_failed'] += 1
+            total_results['total_errors'] += 1
+
+        if i < len(catalogues):
+            time.sleep(delay * 2)
+
+    logger.info(f"Парсинг по каталогам завершен: {total_results}")
+    return total_results
+
+
+def get_catalogues_list(api_key: str = None) -> List[Dict[str, Any]]:
+    """Получение списка каталогов SuperJob (для UI и выбора)."""
+    client = SuperJobAPIClient(api_key)
+    raw = client.get_catalogues()
+
+    result = []
+    for cat in raw:
+        positions = [
+            {'key': p['key'], 'title': p.get('title', '')}
+            for p in cat.get('positions', [])
+        ]
+        result.append({
+            'key': cat['key'],
+            'title': cat.get('title', ''),
+            'positions': positions,
+        })
+    return result
 
 
 def get_vacancy_details(vacancy_id: str, api_key: str = None) -> Optional[Dict[str, Any]]:

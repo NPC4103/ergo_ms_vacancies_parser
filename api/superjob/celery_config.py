@@ -53,6 +53,11 @@ class SuperjobCeleryConfig(VacanciesParserCeleryConfigBase):
                 'soft_time_limit': 5100,  # Мягкий таймаут 1 час 25 минут
                 'rate_limit': '2/h',   # Максимум 2 задачи в час
             },
+            'modules.vacancies_parser.api.superjob.tasks.parse_superjob_by_catalogues_task': {
+                'time_limit': 14400,  # Таймаут 4 часа (много каталогов)
+                'soft_time_limit': 14100,
+                'rate_limit': '1/h',  # Максимум 1 задача в час
+            },
         }
     
     def get_module_loggers(self) -> Dict[str, Any]:

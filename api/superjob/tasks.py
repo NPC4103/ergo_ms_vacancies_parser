@@ -1,11 +1,12 @@
 import logging
-from typing import Dict, Any
+from typing import Dict, List, Any
 
 from celery import shared_task
 
 from .scripts import (
     parse_vacancies_by_text,
     parse_all_vacancies,
+    parse_vacancies_by_catalogues,
     get_vacancy_details,
 )
 
@@ -153,6 +154,52 @@ def get_superjob_vacancy_details_task(self,
             'status': 'FAILURE',
             'error': str(e),
             'message': f'Ошибка при получении деталей: {e}',
+        }
+
+
+@shared_task(bind=True)
+def parse_superjob_by_catalogues_task(self, catalogue_ids: List[int] = None, max_pages_per_catalogue: int = 10,
+    delay: float = 1.0, api_key: str = None) -> Dict[str, Any]:
+    """Парсинг вакансий SuperJob по каталогам (отраслям)."""
+    try:
+        mode = f"{len(catalogue_ids)} выбранных" if catalogue_ids else "всех"
+        logger.info(f"Парсинг SuperJob по каталогам ({mode})")
+
+        self.update_state(
+            state='PROGRESS',
+            meta={
+                'current': 0,
+                'total': len(catalogue_ids) if catalogue_ids else 0,
+                'status': f'Парсинг вакансий по каталогам ({mode})',
+            }
+        )
+
+        result = parse_vacancies_by_catalogues(
+            catalogue_ids=catalogue_ids,
+            max_pages_per_catalogue=max_pages_per_catalogue,
+            delay=delay,
+            api_key=api_key,
+        )
+
+        logger.info(f"Парсинг SuperJob по каталогам завершен: {result}")
+
+        return {
+            'status': 'SUCCESS',
+            'result': result,
+            'message': (
+                f'Парсинг по каталогам завершен. '
+                f'Каталогов: {result["catalogues_processed"]}/{result["total_catalogues"]}, '
+                f'Вакансий: {result["total_vacancies"]}, '
+                f'Сохранено: {result["total_saved"]}'
+            ),
+        }
+
+    except Exception as e:
+        logger.error(f"Ошибка парсинга SuperJob по каталогам: {e}")
+        return {
+            'status': 'FAILURE',
+            'error': str(e),
+            'message': f'Ошибка при парсинге по каталогам: {e}',
         }
 
 
