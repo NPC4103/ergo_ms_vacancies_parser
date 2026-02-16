@@ -81,8 +81,11 @@ function getConfigLabel(key) {
     'items_per_page': 'Вакансий на страницу',
     'delay': 'Задержка (сек)',
     'text': 'Поисковый запрос',
+    'keyword': 'Поисковый запрос',
+    'keywords': 'Поисковый запрос',
     'q': 'Поисковый запрос',
-    'keywords': 'Ключевые слова',
+    'town': 'Город',
+    'catalogues': 'Каталоги',
     'experience': 'Опыт работы'
   }
   return labels[key] || key

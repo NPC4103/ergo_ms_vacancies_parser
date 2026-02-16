@@ -52,5 +52,35 @@ export default {
       title: 'Результаты парсинга',
       requiresAuth: true
     }
+  },
+
+  // Список вакансий с расширенными фильтрами
+  VacanciesList: {
+    path: '/vacancies-parser/vacancies',
+    component: '@/modules/vacancies_parser/client/VacanciesList/VacanciesListView.vue',
+    meta: {
+      title: 'Вакансии',
+      requiresAuth: true
+    }
+  },
+
+  // Детальный просмотр вакансии
+  VacancyDetail: {
+    path: '/vacancies-parser/vacancies/:id',
+    component: '@/modules/vacancies_parser/client/VacancyDetail/VacancyDetailView.vue',
+    meta: {
+      title: 'Детали вакансии',
+      requiresAuth: true
+    }
+  },
+
+  // Управление парсингом
+  ParsingControl: {
+    path: '/vacancies-parser/control',
+    component: '@/modules/vacancies_parser/client/ParsingControl/ParsingControlView.vue',
+    meta: {
+      title: 'Управление парсингом',
+      requiresAuth: true
+    }
   }
 }

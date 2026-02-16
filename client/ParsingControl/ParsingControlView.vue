@@ -8,6 +8,8 @@ import ConfirmDialog from '@/components/ConfirmDialog.vue'
 const toast = useToast()
 const { parsing, taskId, taskStatus, parseByRoles, parseByTechnologies, checkTaskStatus } = useParsing()
 
+const ACTIVE_SOURCE = 'headhunter'
+
 // Форма для парсинга по ролям
 const rolesForm = ref({
   area: 113,
@@ -34,8 +36,8 @@ const showConfirmDialog = ref(false)
 const confirmAction = ref(null)
 
 const handleParseByRoles = () => {
-  confirmAction.value = () => {
-    parseByRoles(rolesForm.value)
+  confirmAction.value = async () => {
+    await parseByRoles(ACTIVE_SOURCE, rolesForm.value)
     if (taskId.value) {
       startStatusCheck()
     }
@@ -48,14 +50,14 @@ const handleParseByTechnologies = () => {
     .split(',')
     .map(t => t.trim())
     .filter(t => t)
-  
+
   if (technologies.length === 0) {
     toast.error('Укажите хотя бы одну технологию')
     return
   }
 
-  confirmAction.value = () => {
-    parseByTechnologies({
+  confirmAction.value = async () => {
+    await parseByTechnologies(ACTIVE_SOURCE, {
       ...techForm.value,
       technologies
     })
@@ -81,7 +83,7 @@ const startStatusCheck = () => {
     }
     
     try {
-      await checkTaskStatus()
+      await checkTaskStatus(ACTIVE_SOURCE)
       if (taskStatus.value && (taskStatus.value.status === 'SUCCESS' || taskStatus.value.status === 'FAILURE')) {
         clearInterval(interval)
         if (taskStatus.value.status === 'SUCCESS') {

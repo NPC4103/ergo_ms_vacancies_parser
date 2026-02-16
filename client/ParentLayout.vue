@@ -39,7 +39,7 @@ const navigationButtons = computed(() => {
         </div>
         <div class="header-text">
           <h1 class="header-title">Парсер вакансий</h1>
-          <p class="header-subtitle">Анализ и мониторинг вакансий с HeadHunter</p>
+          <p class="header-subtitle">Анализ и мониторинг вакансий с HeadHunter, SuperJob и Habr Career</p>
         </div>
       </div>
     </header>

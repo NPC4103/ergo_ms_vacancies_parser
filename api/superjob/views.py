@@ -21,8 +21,10 @@ from .tasks import (
     get_superjob_vacancy_details_task,
     parse_superjob_vacancies_by_config_task,
     parse_superjob_by_catalogues_task,
+    parse_superjob_batch_task,
+    check_superjob_vacancies_status_task,
 )
-from .scripts import get_catalogues_list
+from .parsers.discovery import get_catalogues_list
 from celery.result import AsyncResult
 from modules.vacancies_parser.api.core.utils.task_runner import safe_task_run
 from modules.vacancies_parser.api.core.utils.celery_broker import BrokerUnavailableError
@@ -245,7 +247,7 @@ class VacancyViewSet(SwaggerSafeMixin, viewsets.ReadOnlyModelViewSet):
             serializer = ParsingTaskStatusSerializer(status_data)
             return Response(serializer.data)
         except Exception as e:
-            logger.error(f'Ошибка при получении статуса задачи {task_id}: {str(e)}', exc_info=True)
+            logger.error('Ошибка при получении статуса задачи %s: %s', task_id, e, exc_info=True)
             return Response(
                 {'error': f'Ошибка при получении статуса: {str(e)}'},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
@@ -300,14 +302,14 @@ class ParsingControlViewSet(SwaggerSafeMixin, viewsets.ViewSet):
                 'message': f'Парсинг вакансий по запросу "{text}" запущен',
             }, status=status.HTTP_202_ACCEPTED)
         except BrokerUnavailableError as e:
-            logger.error(f'Ошибка брокера при запуске парсинга по тексту: {str(e)}')
+            logger.error('Ошибка брокера при запуске парсинга по тексту: %s', e)
             return Response({
                 'error': f'Celery брокер недоступен: {str(e)}',
                 'broker_error': True,
                 'suggestion': 'Запустите Celery worker: ergoms start-worker',
             }, status=status.HTTP_503_SERVICE_UNAVAILABLE)
         except Exception as e:
-            logger.error(f'Ошибка при запуске парсинга по тексту: {str(e)}', exc_info=True)
+            logger.error('Ошибка при запуске парсинга по тексту: %s', e, exc_info=True)
             return Response(
                 {'error': f'Ошибка при запуске задачи: {str(e)}'},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
@@ -341,14 +343,14 @@ class ParsingControlViewSet(SwaggerSafeMixin, viewsets.ViewSet):
                 'message': 'Универсальный парсинг вакансий SuperJob запущен',
             }, status=status.HTTP_202_ACCEPTED)
         except BrokerUnavailableError as e:
-            logger.error(f'Ошибка брокера при запуске универсального парсинга: {str(e)}')
+            logger.error('Ошибка брокера при запуске универсального парсинга: %s', e)
             return Response({
                 'error': f'Celery брокер недоступен: {str(e)}',
                 'broker_error': True,
                 'suggestion': 'Запустите Celery worker: ergoms start-worker',
             }, status=status.HTTP_503_SERVICE_UNAVAILABLE)
         except Exception as e:
-            logger.error(f'Ошибка при запуске универсального парсинга: {str(e)}', exc_info=True)
+            logger.error('Ошибка при запуске универсального парсинга: %s', e, exc_info=True)
             return Response(
                 {'error': f'Ошибка при запуске задачи: {str(e)}'},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
@@ -378,14 +380,14 @@ class ParsingControlViewSet(SwaggerSafeMixin, viewsets.ViewSet):
                 'message': 'Парсинг вакансий по конфигурации запущен',
             }, status=status.HTTP_202_ACCEPTED)
         except BrokerUnavailableError as e:
-            logger.error(f'Ошибка брокера при запуске парсинга по конфигу: {str(e)}')
+            logger.error('Ошибка брокера при запуске парсинга по конфигу: %s', e)
             return Response({
                 'error': f'Celery брокер недоступен: {str(e)}',
                 'broker_error': True,
                 'suggestion': 'Запустите Celery worker: ergoms start-worker',
             }, status=status.HTTP_503_SERVICE_UNAVAILABLE)
         except Exception as e:
-            logger.error(f'Ошибка при запуске парсинга по конфигу: {str(e)}', exc_info=True)
+            logger.error('Ошибка при запуске парсинга по конфигу: %s', e, exc_info=True)
             return Response(
                 {'error': f'Ошибка при запуске задачи: {str(e)}'},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
@@ -422,14 +424,14 @@ class ParsingControlViewSet(SwaggerSafeMixin, viewsets.ViewSet):
                 'message': f'Парсинг вакансий по каталогам ({mode}) запущен',
             }, status=status.HTTP_202_ACCEPTED)
         except BrokerUnavailableError as e:
-            logger.error(f'Ошибка брокера при парсинге по каталогам: {str(e)}')
+            logger.error('Ошибка брокера при парсинге по каталогам: %s', e)
             return Response({
                 'error': f'Celery брокер недоступен: {str(e)}',
                 'broker_error': True,
                 'suggestion': 'Запустите Celery worker: ergoms start-worker',
             }, status=status.HTTP_503_SERVICE_UNAVAILABLE)
         except Exception as e:
-            logger.error(f'Ошибка при запуске парсинга по каталогам: {str(e)}', exc_info=True)
+            logger.error('Ошибка при запуске парсинга по каталогам: %s', e, exc_info=True)
             return Response(
                 {'error': f'Ошибка при запуске задачи: {str(e)}'},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
@@ -452,7 +454,7 @@ class ParsingControlViewSet(SwaggerSafeMixin, viewsets.ViewSet):
                 'catalogues': result,
             })
         except Exception as e:
-            logger.error(f'Ошибка при получении каталогов: {str(e)}', exc_info=True)
+            logger.error('Ошибка при получении каталогов: %s', e, exc_info=True)
             return Response(
                 {'error': f'Ошибка при получении каталогов: {str(e)}'},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
@@ -486,7 +488,7 @@ class ParsingControlViewSet(SwaggerSafeMixin, viewsets.ViewSet):
                 'message': f'Получение деталей вакансии {vacancy_id} запущено',
             }, status=status.HTTP_202_ACCEPTED)
         except BrokerUnavailableError as e:
-            logger.error(f'Ошибка брокера при получении деталей вакансии {vacancy_id}: {str(e)}')
+            logger.error('Ошибка брокера при получении деталей вакансии %s: %s', vacancy_id, e)
             return Response({
                 'error': f'Celery брокер недоступен: {str(e)}',
                 'broker_error': True,

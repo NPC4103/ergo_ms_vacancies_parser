@@ -164,7 +164,8 @@ class Command(BaseCommand):
             or config.get('api_key')
             or os.environ.get('SUPERJOB_API_KEY')
         )
-        text = options.get('text') or config.get('search_queries', [None])[0]
+        search_queries = config.get('search_queries') or [None]
+        text = options.get('text') or search_queries[0]
         town = options.get('town') or config.get('town')
         max_pages = options.get('max_pages') or config.get('max_pages', 5)
         delay = options.get('delay') or config.get('delay', 1.0)

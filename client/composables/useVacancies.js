@@ -64,43 +64,6 @@ export function useVacancies() {
     }
   }
 
-  const loadStats = async (params = {}) => {
-    loading.value = true
-    error.value = null
-    
-    try {
-      const response = await vacanciesApi.getStats(params)
-      return response.data
-    } catch (err) {
-      error.value = err
-      toast.error('Ошибка при загрузке статистики')
-      throw err
-    } finally {
-      loading.value = false
-    }
-  }
-
-  const parseSingle = async (vacancyId, forceUpdate = false) => {
-    try {
-      const response = await vacanciesApi.parseSingle(vacancyId, forceUpdate)
-      toast.success('Парсинг вакансии запущен')
-      return response.data
-    } catch (err) {
-      toast.error('Ошибка при запуске парсинга')
-      throw err
-    }
-  }
-
-  const getTaskStatus = async (taskId) => {
-    try {
-      const response = await vacanciesApi.getTaskStatus(taskId)
-      return response.data
-    } catch (err) {
-      toast.error('Ошибка при получении статуса задачи')
-      throw err
-    }
-  }
-
   const hasNextPage = computed(() => !!pagination.value.next)
   const hasPreviousPage = computed(() => !!pagination.value.previous)
   const totalPages = computed(() => 
@@ -114,12 +77,8 @@ export function useVacancies() {
     pagination,
     loadVacancies,
     loadVacancy,
-    loadStats,
-    parseSingle,
-    getTaskStatus,
     hasNextPage,
     hasPreviousPage,
     totalPages
   }
 }
-

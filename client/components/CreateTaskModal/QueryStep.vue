@@ -212,16 +212,20 @@
       <div class="vp-form-grid">
         <div class="vp-form-group">
           <label class="vp-form-label">
-            Макс. страниц <span class="vp-required">*</span>
+            Количество страниц <span class="vp-required">*</span>
           </label>
           <input 
-            v-model.number="localConfig.max_pages" 
+            v-model.number="localConfig.pages" 
             type="number" 
             class="vp-form-control" 
             min="1" 
-            max="50"
+            max="500"
             required
           >
+          <div class="vp-form-help">
+            <Info :size="14" />
+            <span>Максимум 500 страниц (ограничение API SuperJob)</span>
+          </div>
         </div>
 
         <div class="vp-form-group">
@@ -237,35 +241,73 @@
         </div>
       </div>
 
+      <div class="vp-form-grid">
+        <div class="vp-form-group">
+          <label class="vp-form-label">Поисковый запрос</label>
+          <input 
+            v-model="localConfig.keyword" 
+            type="text" 
+            class="vp-form-control" 
+            placeholder="Например: python developer"
+          >
+        </div>
+
+        <div class="vp-form-group">
+          <label class="vp-form-label">Город</label>
+          <input 
+            v-model="localConfig.town" 
+            type="text" 
+            class="vp-form-control" 
+            placeholder="Например: Москва"
+          >
+        </div>
+      </div>
+
       <div class="vp-form-group">
-        <label class="vp-form-label">Ключевые слова</label>
+        <label class="vp-form-label">ID каталогов (через запятую)</label>
         <input 
-          v-model="localConfig.keywords" 
+          v-model="localConfig.catalogues" 
           type="text" 
           class="vp-form-control" 
-          placeholder="Например: python developer"
+          placeholder="33 — IT, по умолчанию все"
         >
+        <div class="vp-form-help">
+          <Info :size="14" />
+          <span>33 = IT, 48 = Маркетинг. Оставьте пустым для поиска по всем каталогам</span>
+        </div>
       </div>
     </template>
 
     <!-- SuperJob HTML -->
     <template v-else-if="source === 'superjob' && parsingMode === 'html'">
-      <div class="vp-form-group">
-        <label class="vp-form-label">
-          Макс. страниц <span class="vp-required">*</span>
-        </label>
-        <input 
-          v-model.number="localConfig.max_pages" 
-          type="number" 
-          class="vp-form-control" 
-          min="1" 
-          max="30"
-          required
-        >
+      <div class="vp-form-grid">
+        <div class="vp-form-group">
+          <label class="vp-form-label">
+            Макс. страниц <span class="vp-required">*</span>
+          </label>
+          <input 
+            v-model.number="localConfig.max_pages" 
+            type="number" 
+            class="vp-form-control" 
+            min="1" 
+            max="30"
+            required
+          >
+        </div>
+
+        <div class="vp-form-group">
+          <label class="vp-form-label">Город</label>
+          <input 
+            v-model="localConfig.town" 
+            type="text" 
+            class="vp-form-control" 
+            placeholder="Например: Москва"
+          >
+        </div>
       </div>
 
       <div class="vp-form-group">
-        <label class="vp-form-label">Ключевые слова</label>
+        <label class="vp-form-label">Поисковый запрос</label>
         <input 
           v-model="localConfig.keywords" 
           type="text" 
