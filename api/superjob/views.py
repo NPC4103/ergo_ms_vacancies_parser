@@ -1,3 +1,5 @@
+from pathlib import Path
+
 from rest_framework import viewsets, status, permissions
 from rest_framework.decorators import action
 from rest_framework.response import Response
@@ -6,6 +8,7 @@ from django_filters.rest_framework import DjangoFilterBackend
 from django.db.models import Count, Avg, Min, Max, Q
 from django.utils import timezone
 from datetime import timedelta
+from kombu.exceptions import OperationalError
 import logging
 import os
 
@@ -26,14 +29,30 @@ from .tasks import (
 )
 from .parsers.discovery import get_catalogues_list
 from celery.result import AsyncResult
-from modules.vacancies_parser.api.core.utils.task_runner import safe_task_run
-from modules.vacancies_parser.api.core.utils.celery_broker import BrokerUnavailableError
 
 logger = logging.getLogger('modules.vacancies_parser.superjob')
 
+_BROKER_ERRORS = (ConnectionRefusedError, OperationalError, ConnectionError, OSError)
+
+
+def _launch_task(task, kwargs):
+    """Отправка Celery-задачи в брокер. Возвращает AsyncResult."""
+    return task.apply_async(kwargs=kwargs)
+
+
+def _broker_error_response(exc):
+    return Response(
+        {
+            'error': f'Celery брокер недоступен: {exc}',
+            'broker_error': True,
+            'suggestion': 'Запустите Celery worker: ergoms start-worker',
+        },
+        status=status.HTTP_503_SERVICE_UNAVAILABLE,
+    )
+
 
 def _resolve_api_key(request):
-    """Получает API ключ SuperJob: из тела запроса или из переменных окружения."""
+    """Получает API ключ SuperJob: из запроса, env или .env файла модуля."""
     api_key = request.data.get('api_key')
     if api_key:
         return api_key, None
@@ -42,14 +61,25 @@ def _resolve_api_key(request):
     if api_key:
         return api_key, None
 
-    error_resp = Response(
+    env_path = Path(__file__).resolve().parent / '.env'
+    if env_path.is_file():
+        try:
+            for line in env_path.read_text(encoding='utf-8').splitlines():
+                line = line.strip()
+                if line.startswith('SUPERJOB_API_KEY=') and not line.startswith('#'):
+                    val = line.split('=', 1)[1].strip()
+                    if val:
+                        return val, None
+        except OSError:
+            pass
+
+    return None, Response(
         {
             'error': 'Нет API ключа SuperJob. Передайте его в запросе (api_key) '
                      'или укажите в переменной окружения SUPERJOB_API_KEY.'
         },
-        status=status.HTTP_401_UNAUTHORIZED
+        status=status.HTTP_401_UNAUTHORIZED,
     )
-    return None, error_resp
 
 
 class VacancyViewSet(SwaggerSafeMixin, viewsets.ReadOnlyModelViewSet):
@@ -280,39 +310,29 @@ class ParsingControlViewSet(SwaggerSafeMixin, viewsets.ViewSet):
         delay = request.data.get('delay', 1.0)
 
         try:
-            result = safe_task_run(
-                parse_superjob_vacancies_task,
-                {
-                    'text': text,
-                    'town': town,
-                    'experience': experience,
-                    'employment': employment,
-                    'schedule': schedule,
-                    'max_pages': max_pages,
-                    'delay': delay,
-                    'api_key': api_key,
-                },
-                prefer_async=True,
-                fallback_to_sync=False,
-            )
-
+            result = _launch_task(parse_superjob_vacancies_task, {
+                'text': text,
+                'town': town,
+                'experience': experience,
+                'employment': employment,
+                'schedule': schedule,
+                'max_pages': max_pages,
+                'delay': delay,
+                'api_key': api_key,
+            })
             return Response({
                 'task_id': result.id,
                 'status': 'started',
                 'message': f'Парсинг вакансий по запросу "{text}" запущен',
             }, status=status.HTTP_202_ACCEPTED)
-        except BrokerUnavailableError as e:
+        except _BROKER_ERRORS as e:
             logger.error('Ошибка брокера при запуске парсинга по тексту: %s', e)
-            return Response({
-                'error': f'Celery брокер недоступен: {str(e)}',
-                'broker_error': True,
-                'suggestion': 'Запустите Celery worker: ergoms start-worker',
-            }, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+            return _broker_error_response(e)
         except Exception as e:
             logger.error('Ошибка при запуске парсинга по тексту: %s', e, exc_info=True)
             return Response(
                 {'error': f'Ошибка при запуске задачи: {str(e)}'},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
 
     @action(detail=False, methods=['post'])
@@ -326,34 +346,24 @@ class ParsingControlViewSet(SwaggerSafeMixin, viewsets.ViewSet):
         delay = request.data.get('delay', 1.0)
 
         try:
-            result = safe_task_run(
-                parse_all_superjob_vacancies_task,
-                {
-                    'max_pages_per_query': max_pages_per_query,
-                    'delay': delay,
-                    'api_key': api_key,
-                },
-                prefer_async=True,
-                fallback_to_sync=False,
-            )
-
+            result = _launch_task(parse_all_superjob_vacancies_task, {
+                'max_pages_per_query': max_pages_per_query,
+                'delay': delay,
+                'api_key': api_key,
+            })
             return Response({
                 'task_id': result.id,
                 'status': 'started',
                 'message': 'Универсальный парсинг вакансий SuperJob запущен',
             }, status=status.HTTP_202_ACCEPTED)
-        except BrokerUnavailableError as e:
+        except _BROKER_ERRORS as e:
             logger.error('Ошибка брокера при запуске универсального парсинга: %s', e)
-            return Response({
-                'error': f'Celery брокер недоступен: {str(e)}',
-                'broker_error': True,
-                'suggestion': 'Запустите Celery worker: ergoms start-worker',
-            }, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+            return _broker_error_response(e)
         except Exception as e:
             logger.error('Ошибка при запуске универсального парсинга: %s', e, exc_info=True)
             return Response(
                 {'error': f'Ошибка при запуске задачи: {str(e)}'},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
 
     @action(detail=False, methods=['post'])
@@ -367,30 +377,20 @@ class ParsingControlViewSet(SwaggerSafeMixin, viewsets.ViewSet):
         config['api_key'] = api_key
 
         try:
-            result = safe_task_run(
-                parse_superjob_vacancies_by_config_task,
-                {'config': config},
-                prefer_async=True,
-                fallback_to_sync=False,
-            )
-
+            result = _launch_task(parse_superjob_vacancies_by_config_task, {'config': config})
             return Response({
                 'task_id': result.id,
                 'status': 'started',
                 'message': 'Парсинг вакансий по конфигурации запущен',
             }, status=status.HTTP_202_ACCEPTED)
-        except BrokerUnavailableError as e:
+        except _BROKER_ERRORS as e:
             logger.error('Ошибка брокера при запуске парсинга по конфигу: %s', e)
-            return Response({
-                'error': f'Celery брокер недоступен: {str(e)}',
-                'broker_error': True,
-                'suggestion': 'Запустите Celery worker: ergoms start-worker',
-            }, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+            return _broker_error_response(e)
         except Exception as e:
             logger.error('Ошибка при запуске парсинга по конфигу: %s', e, exc_info=True)
             return Response(
                 {'error': f'Ошибка при запуске задачи: {str(e)}'},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
 
     @action(detail=False, methods=['post'])
@@ -405,36 +405,26 @@ class ParsingControlViewSet(SwaggerSafeMixin, viewsets.ViewSet):
         delay = request.data.get('delay', 1.0)
 
         try:
-            result = safe_task_run(
-                parse_superjob_by_catalogues_task,
-                {
-                    'catalogue_ids': catalogue_ids,
-                    'max_pages_per_catalogue': max_pages,
-                    'delay': delay,
-                    'api_key': api_key,
-                },
-                prefer_async=True,
-                fallback_to_sync=False,
-            )
-
+            result = _launch_task(parse_superjob_by_catalogues_task, {
+                'catalogue_ids': catalogue_ids,
+                'max_pages_per_catalogue': max_pages,
+                'delay': delay,
+                'api_key': api_key,
+            })
             mode = f"{len(catalogue_ids)} выбранных" if catalogue_ids else "всех"
             return Response({
                 'task_id': result.id,
                 'status': 'started',
                 'message': f'Парсинг вакансий по каталогам ({mode}) запущен',
             }, status=status.HTTP_202_ACCEPTED)
-        except BrokerUnavailableError as e:
+        except _BROKER_ERRORS as e:
             logger.error('Ошибка брокера при парсинге по каталогам: %s', e)
-            return Response({
-                'error': f'Celery брокер недоступен: {str(e)}',
-                'broker_error': True,
-                'suggestion': 'Запустите Celery worker: ergoms start-worker',
-            }, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+            return _broker_error_response(e)
         except Exception as e:
             logger.error('Ошибка при запуске парсинга по каталогам: %s', e, exc_info=True)
             return Response(
                 {'error': f'Ошибка при запуске задачи: {str(e)}'},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
 
     @action(detail=False, methods=['get'])
@@ -475,30 +465,21 @@ class ParsingControlViewSet(SwaggerSafeMixin, viewsets.ViewSet):
             )
 
         try:
-            result = safe_task_run(
-                get_superjob_vacancy_details_task,
-                {'vacancy_id': str(vacancy_id), 'api_key': api_key},
-                prefer_async=True,
-                fallback_to_sync=False,
-            )
-
+            result = _launch_task(get_superjob_vacancy_details_task, {
+                'vacancy_id': str(vacancy_id),
+                'api_key': api_key,
+            })
             return Response({
                 'task_id': result.id,
                 'status': 'started',
                 'message': f'Получение деталей вакансии {vacancy_id} запущено',
             }, status=status.HTTP_202_ACCEPTED)
-        except BrokerUnavailableError as e:
+        except _BROKER_ERRORS as e:
             logger.error('Ошибка брокера при получении деталей вакансии %s: %s', vacancy_id, e)
-            return Response({
-                'error': f'Celery брокер недоступен: {str(e)}',
-                'broker_error': True,
-                'suggestion': 'Запустите Celery worker: ergoms start-worker',
-            }, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+            return _broker_error_response(e)
         except Exception as e:
-            logger.error(
-                f'Ошибка при получении деталей вакансии {vacancy_id}: {str(e)}', exc_info=True
-            )
+            logger.error('Ошибка при получении деталей вакансии %s: %s', vacancy_id, e, exc_info=True)
             return Response(
                 {'error': f'Ошибка при запуске задачи: {str(e)}'},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
