@@ -2,14 +2,7 @@ import json
 import os
 import traceback
 
-from celery.result import AsyncResult
 from django.core.management.base import BaseCommand
-
-from ...scripts import (
-    parse_habr_vacancies,
-    parse_habr_archived_vacancies,
-    parse_habr_all_vacancies,
-)
 from ...tasks import (
     parse_habr_vacancies_task,
     parse_habr_archived_vacancies_task,
@@ -20,17 +13,19 @@ from ...tasks import (
 class Command(BaseCommand):
     help = 'Парсинг вакансий с Хабр Карьеры'
 
+    @staticmethod
+    def _normalize_search_text(raw_value):
+        if raw_value is None:
+            return None
+        value = str(raw_value).strip()
+        return value or None
+
     def add_arguments(self, parser):
         parser.add_argument(
             '--config',
             type=str,
             default='config.json',
             help='Путь к JSON конфигурационному файлу (по умолчанию config.json)'
-        )
-        parser.add_argument(
-            '--access-token',
-            type=str,
-            help='Access token для API Хабр Карьеры (переопределяет config)'
         )
         parser.add_argument(
             '--pages',
@@ -58,19 +53,14 @@ class Command(BaseCommand):
             help='Парсить все вакансии (активные и архивные)'
         )
         parser.add_argument(
-            '--use-config-only',
-            action='store_true',
-            help='Использовать только настройки из конфигурационного файла'
+            '--search-text',
+            type=str,
+            help='Текстовый фильтр вакансий (например: "Python Django")'
         )
         parser.add_argument(
             '--wait',
             action='store_true',
             help='Дождаться завершения задачи Celery и вывести результат'
-        )
-        parser.add_argument(
-            '--celery',
-            action='store_true',
-            help='Запустить парсинг через Celery'
         )
 
     def load_config(self, config_path):
@@ -133,58 +123,40 @@ class Command(BaseCommand):
     def handle(self, *args, **options):
         config = self.load_config(options['config'])
 
-        access_token = options.get('access_token') or config.get('access_token')
         pages = options.get('pages') or config.get('pages', 5)
         delay = options.get('delay') or config.get('delay', 1.0)
         get_details = not options.get('no_details', False) and config.get('get_details', True)
         parse_archived = options.get('archived', False) or config.get('parse_archived', False)
         parse_all = options.get('all', False) or config.get('parse_all', False)
-        use_celery = options.get('celery', False)
+        search_text = self._normalize_search_text(
+            options.get('search_text') or config.get('search_text')
+        )
         wait_for_result = options.get('wait', False)
 
-        if not access_token:
-            self.stdout.write(
-                self.style.ERROR('Ошибка: Не указан access_token для API Хабр Карьеры')
-            )
-            self.stdout.write(
-                self.style.WARNING(
-                    'Укажите токен в конфигурационном файле или передайте через --access-token'
-                )
-            )
-            return
-
-        token_display = f"{'*' * 10}{access_token[-4:]}" if access_token else 'Не указан'
         self.stdout.write("Параметры парсинга:")
-        self.stdout.write(f"   Access Token: {token_display}")
         self.stdout.write(f"   Страниц: {pages}")
         self.stdout.write(f"   Задержка: {delay}с")
         self.stdout.write(f"   Детали: {'Да' if get_details else 'Нет'}")
         self.stdout.write(f"   Архивные: {'Да' if parse_archived else 'Нет'}")
         self.stdout.write(f"   Все вакансии: {'Да' if parse_all else 'Нет'}")
-        self.stdout.write(f"   Celery: {'Да' if use_celery else 'Нет'}")
+        self.stdout.write(f"   Поиск: {search_text if search_text else 'без фильтра'}")
+        self.stdout.write("   Celery: Да")
 
         try:
-            if use_celery:
-                task = self._run_celery_task(
-                    access_token, pages, delay, get_details,
-                    parse_all, parse_archived
-                )
-                self.stdout.write(f"Задача Celery запущена с ID: {task.id}")
+            task = self._run_celery_task(
+                pages, delay, get_details,
+                parse_all, parse_archived, search_text
+            )
+            self.stdout.write(f"Задача Celery запущена с ID: {task.id}")
 
-                if wait_for_result:
-                    self.stdout.write("Ожидаем завершения задачи...")
-                    result = task.get()
-                    self.print_formatted_result(result)
-                else:
-                    self.stdout.write(
-                        self.style.SUCCESS("Задача отправлена в очередь Celery")
-                    )
-            else:
-                result = self._run_sync(
-                    access_token, pages, delay, get_details,
-                    parse_all, parse_archived
-                )
+            if wait_for_result:
+                self.stdout.write("Ожидаем завершения задачи...")
+                result = task.get()
                 self.print_formatted_result(result)
+            else:
+                self.stdout.write(
+                    self.style.SUCCESS("Задача отправлена в очередь Celery")
+                )
 
         except KeyboardInterrupt:
             self.stdout.write(
@@ -197,41 +169,17 @@ class Command(BaseCommand):
             self.stdout.write("Детали ошибки:")
             traceback.print_exc()
 
-    def _run_celery_task(self, access_token, pages, delay, get_details,
-                         parse_all, parse_archived):
+    def _run_celery_task(self, pages, delay, get_details,
+                         parse_all, parse_archived, search_text):
         """Запуск задачи через Celery"""
         if parse_all:
             return parse_habr_all_vacancies_task.delay(
-                access_token=access_token,
-                pages=pages, delay=delay, get_details=get_details
+                pages=pages, delay=delay, get_details=get_details, search_text=search_text
             )
         if parse_archived:
             return parse_habr_archived_vacancies_task.delay(
-                access_token=access_token,
-                pages=pages, delay=delay
+                pages=pages, delay=delay, search_text=search_text
             )
         return parse_habr_vacancies_task.delay(
-            access_token=access_token,
-            pages=pages, delay=delay, get_details=get_details
-        )
-
-    def _run_sync(self, access_token, pages, delay, get_details,
-                  parse_all, parse_archived):
-        """Синхронный запуск парсинга"""
-        if parse_all:
-            self.stdout.write("Начинаем парсинг всех вакансий...")
-            return parse_habr_all_vacancies(
-                access_token=access_token,
-                pages=pages, delay=delay, get_details=get_details
-            )
-        if parse_archived:
-            self.stdout.write("Начинаем парсинг архивных вакансий...")
-            return parse_habr_archived_vacancies(
-                access_token=access_token,
-                pages=pages, delay=delay
-            )
-        self.stdout.write("Начинаем парсинг активных вакансий...")
-        return parse_habr_vacancies(
-            access_token=access_token,
-            pages=pages, delay=delay, get_details=get_details
+            pages=pages, delay=delay, get_details=get_details, search_text=search_text
         )

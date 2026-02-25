@@ -3,15 +3,15 @@ from .scripts import parse_habr_vacancies, parse_habr_archived_vacancies, parse_
 
 
 @shared_task(bind=True)
-def parse_habr_vacancies_task(self, access_token, pages=5, delay=1.0, get_details=True):
+def parse_habr_vacancies_task(self, pages=5, delay=1.0, get_details=True, search_text=None):
     """
     Celery задача для парсинга вакансий с Хабр Карьеры
 
     Args:
-        access_token (str): Токен доступа к API
         pages (int): Количество страниц для парсинга
         delay (float): Задержка между запросами в секундах
         get_details (bool): Получать ли детальную информацию о вакансиях
+        search_text (str | None): Текстовый фильтр поиска вакансий
     """
     self.update_state(
         state='PROGRESS',
@@ -23,10 +23,10 @@ def parse_habr_vacancies_task(self, access_token, pages=5, delay=1.0, get_detail
     )
 
     result = parse_habr_vacancies(
-        access_token=access_token,
         pages=pages,
         delay=delay,
-        get_details=get_details
+        get_details=get_details,
+        search_text=search_text,
     )
 
     return {
@@ -41,14 +41,14 @@ def parse_habr_vacancies_task(self, access_token, pages=5, delay=1.0, get_detail
 
 
 @shared_task(bind=True)
-def parse_habr_archived_vacancies_task(self, access_token, pages=5, delay=1.0):
+def parse_habr_archived_vacancies_task(self, pages=5, delay=1.0, search_text=None):
     """
     Celery задача для парсинга архивных вакансий с Хабр Карьеры
 
     Args:
-        access_token (str): Токен доступа к API
         pages (int): Количество страниц для парсинга
         delay (float): Задержка между запросами в секундах
+        search_text (str | None): Текстовый фильтр поиска вакансий
     """
     self.update_state(
         state='PROGRESS',
@@ -60,9 +60,9 @@ def parse_habr_archived_vacancies_task(self, access_token, pages=5, delay=1.0):
     )
 
     result = parse_habr_archived_vacancies(
-        access_token=access_token,
         pages=pages,
-        delay=delay
+        delay=delay,
+        search_text=search_text,
     )
 
     return {
@@ -77,15 +77,17 @@ def parse_habr_archived_vacancies_task(self, access_token, pages=5, delay=1.0):
 
 
 @shared_task(bind=True)
-def parse_habr_all_vacancies_task(self, access_token, pages=5, delay=1.0, get_details=True):
+def parse_habr_all_vacancies_task(
+    self, pages=5, delay=1.0, get_details=True, search_text=None
+):
     """
     Celery задача для парсинга всех вакансий (активных и архивных) с Хабр Карьеры
 
     Args:
-        access_token (str): Токен доступа к API
         pages (int): Количество страниц для парсинга
         delay (float): Задержка между запросами в секундах
         get_details (bool): Получать ли детальную информацию о вакансиях
+        search_text (str | None): Текстовый фильтр поиска вакансий
     """
     self.update_state(
         state='PROGRESS',
@@ -97,10 +99,10 @@ def parse_habr_all_vacancies_task(self, access_token, pages=5, delay=1.0, get_de
     )
 
     result = parse_habr_all_vacancies(
-        access_token=access_token,
         pages=pages,
         delay=delay,
-        get_details=get_details
+        get_details=get_details,
+        search_text=search_text,
     )
 
     return {
