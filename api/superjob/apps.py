@@ -11,6 +11,7 @@ class VacanciesParserSuperjobConfig(AppConfig):
 
     def ready(self):
         self._load_env()
+        self._register_html_parser_override()
 
     @staticmethod
     def _load_env():
@@ -28,4 +29,18 @@ class VacanciesParserSuperjobConfig(AppConfig):
                 if key and key not in os.environ:
                     os.environ[key] = val
         except OSError:
+            pass
+
+    @staticmethod
+    def _register_html_parser_override():
+        """
+        Регистрирует override для superjob/html в ParserFactory.
+        """
+        try:
+            from ..core.parsers.base import ParserFactory
+            from .parsers.html_parser import SuperJobHTMLParserOverride
+
+            ParserFactory.register('superjob', 'html', SuperJobHTMLParserOverride)
+        except Exception:
+            # Не блокируем запуск приложения, если регистрация не удалась.
             pass

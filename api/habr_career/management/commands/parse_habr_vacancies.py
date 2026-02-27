@@ -2,6 +2,7 @@ import json
 import os
 import traceback
 
+from celery.exceptions import TimeoutError as CeleryTimeoutError
 from django.core.management.base import BaseCommand
 from ...tasks import (
     parse_habr_vacancies_task,
@@ -61,6 +62,12 @@ class Command(BaseCommand):
             '--wait',
             action='store_true',
             help='Дождаться завершения задачи Celery и вывести результат'
+        )
+        parser.add_argument(
+            '--wait-timeout',
+            type=int,
+            default=None,
+            help='Таймаут ожидания результата в секундах для --wait'
         )
 
     def load_config(self, config_path):
@@ -132,6 +139,7 @@ class Command(BaseCommand):
             options.get('search_text') or config.get('search_text')
         )
         wait_for_result = options.get('wait', False)
+        wait_timeout = options.get('wait_timeout')
 
         self.stdout.write("Параметры парсинга:")
         self.stdout.write(f"   Страниц: {pages}")
@@ -150,9 +158,21 @@ class Command(BaseCommand):
             self.stdout.write(f"Задача Celery запущена с ID: {task.id}")
 
             if wait_for_result:
-                self.stdout.write("Ожидаем завершения задачи...")
-                result = task.get()
-                self.print_formatted_result(result)
+                try:
+                    if wait_timeout is not None:
+                        self.stdout.write(f"Ожидаем завершения задачи (таймаут: {wait_timeout}с)...")
+                        result = task.get(timeout=wait_timeout)
+                    else:
+                        self.stdout.write("Ожидаем завершения задачи...")
+                        result = task.get()
+                    self.print_formatted_result(result)
+                except CeleryTimeoutError:
+                    self.stdout.write(
+                        self.style.WARNING(
+                            f"Таймаут ожидания результата ({wait_timeout}с). "
+                            f"Задача {task.id} продолжает выполняться в Celery."
+                        )
+                    )
             else:
                 self.stdout.write(
                     self.style.SUCCESS("Задача отправлена в очередь Celery")

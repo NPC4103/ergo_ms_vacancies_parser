@@ -14,6 +14,7 @@ import os
 
 from src.core.utils.mixins import SwaggerSafeMixin
 from .models import SuperJobVacancy, SuperJobVacancyVersion
+from ..core.models import ParsingTask
 from .serializers import (
     VacancyListSerializer, VacancyDetailSerializer, VacancyVersionSerializer,
     VacancyChangeHistorySerializer, VacancyStatsSerializer, ParsingTaskStatusSerializer
@@ -29,6 +30,7 @@ from .tasks import (
 )
 from .parsers.discovery import get_catalogues_list
 from celery.result import AsyncResult
+from ..core.celery_tasks import create_parsing_task
 
 logger = logging.getLogger('modules.vacancies_parser.superjob')
 
@@ -80,6 +82,17 @@ def _resolve_api_key(request):
         },
         status=status.HTTP_401_UNAUTHORIZED,
     )
+
+
+def _resolve_parsing_mode(request):
+    raw_mode = request.data.get('parsing_mode', 'api')
+    mode = str(raw_mode).strip().lower()
+    if mode not in ('api', 'html'):
+        return None, Response(
+            {'error': 'Некорректный parsing_mode. Допустимые значения: api, html'},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+    return mode, None
 
 
 class VacancyViewSet(SwaggerSafeMixin, viewsets.ReadOnlyModelViewSet):
@@ -258,17 +271,47 @@ class VacancyViewSet(SwaggerSafeMixin, viewsets.ReadOnlyModelViewSet):
 
         try:
             task_result = AsyncResult(task_id)
+            normalized_result = None
             status_data = {
                 'task_id': task_id,
                 'status': task_result.status,
                 'progress': None,
-                'result': None,
+                'result': normalized_result,
                 'error': None,
             }
 
             if task_result.ready():
                 if task_result.successful():
-                    status_data['result'] = task_result.result
+                    raw_result = task_result.result
+
+                    # create_parsing_task возвращает int (ID ParsingTask),
+                    # а сериализатор ожидает объект.
+                    if isinstance(raw_result, int):
+                        parsing_task = (
+                            ParsingTask.objects.filter(id=raw_result)
+                            .values(
+                                'id',
+                                'status',
+                                'source',
+                                'parsing_mode',
+                                'total_items',
+                                'processed_items',
+                                'completed_items',
+                                'failed_items',
+                                'progress_percent',
+                            )
+                            .first()
+                        )
+                        normalized_result = {
+                            'parsing_task_id': raw_result,
+                            'parsing_task': parsing_task,
+                        }
+                    elif isinstance(raw_result, dict):
+                        normalized_result = raw_result
+                    else:
+                        normalized_result = {'value': str(raw_result)}
+
+                    status_data['result'] = normalized_result
                 else:
                     status_data['error'] = str(task_result.info)
             elif hasattr(task_result, 'info') and isinstance(task_result.info, dict):
@@ -291,9 +334,15 @@ class ParsingControlViewSet(SwaggerSafeMixin, viewsets.ViewSet):
     @action(detail=False, methods=['post'])
     def parse_by_text(self, request):
         """Запустить парсинг вакансий по текстовому запросу"""
-        api_key, err = _resolve_api_key(request)
-        if err:
-            return err
+        parsing_mode, mode_err = _resolve_parsing_mode(request)
+        if mode_err:
+            return mode_err
+
+        api_key = None
+        if parsing_mode == 'api':
+            api_key, err = _resolve_api_key(request)
+            if err:
+                return err
 
         text = request.data.get('text')
         if not text:
@@ -310,6 +359,26 @@ class ParsingControlViewSet(SwaggerSafeMixin, viewsets.ViewSet):
         delay = request.data.get('delay', 1.0)
 
         try:
+            if parsing_mode == 'html':
+                task_name = f'SuperJob HTML: {text}'
+                html_config = {
+                    'keywords': text,
+                    'max_pages': max_pages,
+                    'delay': delay,
+                }
+                result = _launch_task(create_parsing_task, {
+                    'source': 'superjob',
+                    'parsing_mode': 'html',
+                    'config': html_config,
+                    'name': task_name,
+                    'created_by_id': request.user.id if request.user.is_authenticated else None,
+                })
+                return Response({
+                    'task_id': result.id,
+                    'status': 'started',
+                    'message': f'HTML-парсинг SuperJob по запросу "{text}" запущен',
+                }, status=status.HTTP_202_ACCEPTED)
+
             result = _launch_task(parse_superjob_vacancies_task, {
                 'text': text,
                 'town': town,

@@ -17,6 +17,7 @@ from ...tasks import (
     parse_superjob_by_catalogues_task,
     get_superjob_vacancy_details_task,
 )
+from modules.vacancies_parser.api.core.celery_tasks import create_parsing_task
 
 
 class Command(BaseCommand):
@@ -99,6 +100,12 @@ class Command(BaseCommand):
             '--wait',
             action='store_true',
             help='Дождаться завершения задачи Celery и вывести результат',
+        )
+        parser.add_argument(
+            '--parsing-mode',
+            type=str,
+            choices=['api', 'html'],
+            help='Режим парсинга: api или html (по умолчанию из config или api)',
         )
 
     def load_config(self, config_path):
@@ -192,8 +199,17 @@ class Command(BaseCommand):
         vacancy_id = options.get('vacancy_id')
         use_celery = options.get('celery', False)
         wait_for_result = options.get('wait', False)
+        parsing_mode = (
+            options.get('parsing_mode')
+            or config.get('parsing_mode')
+            or 'api'
+        ).strip().lower()
 
-        if not api_key:
+        if parsing_mode not in ('api', 'html'):
+            self.stdout.write(self.style.ERROR(f"Некорректный parsing_mode: {parsing_mode}"))
+            return
+
+        if parsing_mode == 'api' and not api_key:
             self.stdout.write(
                 self.style.ERROR('Ошибка: Не указан API ключ SuperJob')
             )
@@ -205,7 +221,7 @@ class Command(BaseCommand):
             )
             return
 
-        if list_catalogues_flag:
+        if list_catalogues_flag and parsing_mode == 'api':
             self._print_catalogues(api_key)
             return
 
@@ -213,9 +229,13 @@ class Command(BaseCommand):
         if catalogue_ids_str:
             catalogue_ids = [int(x.strip()) for x in catalogue_ids_str.split(',')]
 
-        key_display = f"{'*' * 10}{api_key[-4:]}" if len(api_key) > 4 else '****'
+        key_display = None
+        if parsing_mode == 'api':
+            key_display = f"{'*' * 10}{api_key[-4:]}" if len(api_key) > 4 else '****'
         self.stdout.write("Параметры парсинга:")
-        self.stdout.write(f"   API Key: {key_display}")
+        self.stdout.write(f"   Режим парсинга: {parsing_mode}")
+        if parsing_mode == 'api':
+            self.stdout.write(f"   API Key: {key_display}")
         self.stdout.write(f"   Задержка: {delay}с")
         self.stdout.write(f"   Celery: {'Да' if use_celery else 'Нет'}")
 
@@ -234,6 +254,55 @@ class Command(BaseCommand):
             self.stdout.write(f"   Страниц: {max_pages}")
 
         try:
+            if parsing_mode == 'html':
+                if parse_all_flag or parse_catalogues_flag or vacancy_id or list_catalogues_flag:
+                    self.stdout.write(
+                        self.style.ERROR(
+                            "HTML режим поддерживает только парсинг по тексту (--text). "
+                            "Режимы --all/--catalogues/--vacancy-id/--list-catalogues доступны только для API."
+                        )
+                    )
+                    return
+                if not text:
+                    self.stdout.write(
+                        self.style.ERROR('Для HTML режима укажите текст поиска через --text')
+                    )
+                    return
+                if not use_celery:
+                    self.stdout.write(
+                        self.style.ERROR('HTML режим доступен только через Celery. Добавьте флаг --celery')
+                    )
+                    return
+
+                html_config = {
+                    'keywords': text,
+                    'max_pages': max_pages,
+                    'delay': delay,
+                }
+                html_task = create_parsing_task.delay(
+                    source='superjob',
+                    parsing_mode='html',
+                    config=html_config,
+                    name=f'SuperJob HTML: {text}',
+                )
+                self.stdout.write(f"Задача Celery запущена с ID: {html_task.id}")
+                if wait_for_result:
+                    self.stdout.write(
+                        "Ожидаем завершения этапа discovery (создания parsing task)..."
+                    )
+                    parsing_task_id = html_task.get()
+                    self.stdout.write(
+                        self.style.SUCCESS(
+                            f"ParsingTask создан с ID: {parsing_task_id}. "
+                            "Дальнейшая обработка выполняется воркерами."
+                        )
+                    )
+                else:
+                    self.stdout.write(
+                        self.style.SUCCESS("Задача HTML-парсинга отправлена в очередь Celery")
+                    )
+                return
+
             if use_celery:
                 task = self._run_celery_task(
                     api_key, text, town, max_pages, delay,
