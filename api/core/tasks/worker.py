@@ -10,6 +10,9 @@
 import logging
 from typing import List, Optional
 
+from django.db import models
+from django.db.models.fields import NOT_PROVIDED
+
 from .base import BaseParsingTaskMixin
 
 logger = logging.getLogger('celery.module.vacancies_parser.tasks.worker')
@@ -58,49 +61,176 @@ def claim_items_for_worker(task_id: int, worker_id: str, limit: int = 10) -> Lis
     )
 
 
+_SOURCE_CONFIGS = {
+    'headhunter': {
+        'app_label': 'vacancies_parser_headhunter',
+        'model_name': 'Vacancy',
+        'id_field': 'hh_id',
+        'field_remap': {
+            'source_url': 'url',
+            'area_name': 'city',
+            'experience': 'experience_level',
+            'schedule': 'schedule_type',
+        },
+    },
+    'habr_career': {
+        'app_label': 'vacancies_parser_habr_career',
+        'model_name': 'Vacancy',
+        'id_field': 'habr_id',
+        'field_remap': {
+            'source_url': 'url',
+            'area_name': 'city',
+            'key_skills': 'skills',
+            'experience': 'experience_level',
+            'schedule': 'schedule_type',
+        },
+    },
+    'superjob': {
+        'app_label': 'vacancies_parser_superjob',
+        'model_name': 'SuperJobVacancy',
+        'id_field': 'superjob_id',
+        'field_remap': {
+            'source_url': 'url',
+            'area_name': 'city',
+            'experience': 'experience_level',
+            'schedule': 'schedule_type',
+        },
+    },
+}
+
+_SKIP_FIELDS = frozenset({
+    'source', 'source_id', 'source_url', 'parsing_mode', 'archived',
+})
+
+
+def _get_model_field_names(model) -> frozenset:
+    return frozenset(f.name for f in model._meta.get_fields() if hasattr(f, 'column'))
+
+
+def _ensure_not_null_defaults(mapped: dict, model) -> dict:
+    """
+    Гарантирует, что все NOT NULL поля модели имеют значения в mapped.
+
+    Парсеры могут не возвращать часть полей (has_test, premium и т.д.)
+    или возвращать None. Перед записью необходимо явно задать значения
+    для всех NOT NULL полей, чтобы избежать IntegrityError.
+    """
+    for field in model._meta.concrete_fields:
+        if field.primary_key:
+            continue
+        if getattr(field, 'auto_now', False) or getattr(field, 'auto_now_add', False):
+            continue
+        if field.null:
+            continue
+
+        name = field.name
+        if name in mapped and mapped[name] is not None:
+            continue
+
+        if field.default is not NOT_PROVIDED:
+            mapped[name] = field.default() if callable(field.default) else field.default
+            continue
+
+        if isinstance(field, models.BooleanField):
+            mapped[name] = False
+        elif isinstance(field, (models.CharField, models.TextField)):
+            mapped[name] = ''
+        elif isinstance(field, models.JSONField):
+            mapped[name] = []
+        elif isinstance(field, (models.IntegerField, models.SmallIntegerField,
+                                models.BigIntegerField, models.FloatField,
+                                models.DecimalField)):
+            mapped[name] = 0
+    return mapped
+
+
+def _map_to_source_fields(vacancy_data: dict, source: str, model) -> dict:
+    """Конвертирует выход парсера в поля модели источника."""
+    from django.utils import timezone as tz
+
+    config = _SOURCE_CONFIGS[source]
+    remap = config.get('field_remap', {})
+    valid_fields = _get_model_field_names(model)
+    mapped = {}
+
+    for key, value in vacancy_data.items():
+        if key in _SKIP_FIELDS:
+            continue
+        target_key = remap.get(key, key)
+        if target_key in valid_fields:
+            mapped[target_key] = value
+
+    mapped[config['id_field']] = vacancy_data.get('source_id', '')
+    mapped.setdefault('url', vacancy_data.get('source_url', ''))
+
+    mapped.setdefault('published_at', tz.now())
+    mapped.setdefault('description', '')
+    mapped.setdefault('company_name', '')
+    mapped.setdefault('title', '')
+
+    mapped = _ensure_not_null_defaults(mapped, model)
+    return _truncate_char_fields(mapped, model)
+
+
+def _truncate_char_fields(mapped: dict, model) -> dict:
+    """
+    Обрезает строковые значения по max_length соответствующего CharField.
+
+    Парсеры могут возвращать строки длиннее, чем позволяет БД-столбец
+    (например, город «Москва, Санкт-Петербург, Новосибирск и ...»).
+    """
+    for field in model._meta.concrete_fields:
+        max_len = getattr(field, 'max_length', None)
+        if max_len is None:
+            continue
+        name = field.name
+        value = mapped.get(name)
+        if isinstance(value, str) and len(value) > max_len:
+            mapped[name] = value[:max_len]
+    return mapped
+
+
+def _get_source_model(source: str):
+    from django.apps import apps
+    config = _SOURCE_CONFIGS[source]
+    return apps.get_model(config['app_label'], config['model_name'])
+
+
 def process_item(item, parser, task, error_handler):
     """
     Обработка одного item.
-    
-    Args:
-        item: TaskItem для обработки
-        parser: Парсер для извлечения данных
-        task: ParsingTask
-        error_handler: Обработчик ошибок
-    
-    Returns:
-        dict: Результат обработки
+
+    Сохраняет результат в таблицу конкретного источника
+    (vpm_hh_vacancy / vpm_hc_vacancy / vpm_sj_vacancy).
     """
-    from ..normalized_models import NormalizedVacancy
-    
-    # Парсинг item
     vacancy_data = parser.parse_item(item.source_item_id, item.url)
-    
-    # Удаляем поля lookup из defaults
-    defaults_data = {k: v for k, v in vacancy_data.items() 
-                    if k not in ('source', 'source_id')}
-    defaults_data['task_item'] = item
-    
-    # Сохранение в NormalizedVacancy
-    vacancy, created = NormalizedVacancy.objects.update_or_create(
-        source=task.source,
-        source_id=item.source_item_id,
-        defaults=defaults_data
+
+    source = task.source
+    config = _SOURCE_CONFIGS.get(source)
+
+    if not config:
+        raise ValueError(f"Неизвестный источник: {source}")
+
+    Model = _get_source_model(source)
+    id_field = config['id_field']
+    mapped = _map_to_source_fields(vacancy_data, source, Model)
+
+    lookup_value = mapped.pop(id_field)
+    vacancy, created = Model.objects.update_or_create(
+        **{id_field: lookup_value},
+        defaults=mapped,
     )
-    
-    # Отметка item как completed
+
     item.mark_completed(
         result_vacancy_id=vacancy.id,
-        extracted_data=vacancy_data
+        extracted_data=vacancy_data,
     )
-    
-    # Обновление счетчика задачи
     task.increment_completed()
-    
+
     return {
         'success': True,
         'vacancy_id': vacancy.id,
-        'created': created
+        'created': created,
     }
 
 

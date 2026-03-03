@@ -208,11 +208,43 @@ class TaskScheduler:
             logger.error(f"Ошибка при проверке завершенности задачи {task_id}: {e}")
             return False
     
+    _TERMINAL_STATUSES = frozenset({'completed', 'failed', 'blocked'})
+
+    def _cleanup_stuck_items(self, task_id: int):
+        """
+        Помечает все незавершённые items как failed перед финализацией.
+
+        Chord вызывает финализацию после завершения ВСЕХ воркеров,
+        поэтому любой item не в терминальном статусе (completed / failed /
+        blocked) гарантированно никем не обрабатывается.  Причины:
+        - pending: пропущен из-за SKIP LOCKED или нехватки воркеров
+        - in_progress: worker завершился до обработки
+        - retrying / другие: нештатное состояние
+        """
+        stuck = TaskItem.objects.filter(
+            task_id=task_id,
+        ).exclude(
+            status__in=self._TERMINAL_STATUSES,
+        )
+
+        stuck_count = stuck.update(
+            status='failed',
+            last_error='Item не был обработан до финализации задачи',
+            last_error_type='unknown',
+            updated_at=timezone.now(),
+        )
+        if stuck_count:
+            logger.warning(
+                f"Задача {task_id}: {stuck_count} items не были обработаны "
+                f"до финализации — помечены как failed"
+            )
+
     def finalize_task(self, task_id: int) -> bool:
         """
         Финализация задачи после завершения обработки всех items.
         
         Действия:
+        - Очистка застрявших items (in_progress / pending)
         - Переход задачи в статус 'completed' или 'failed'
         - Создание итоговой статистики
         - Логирование результатов
@@ -225,13 +257,13 @@ class TaskScheduler:
         """
         try:
             task = ParsingTask.objects.get(id=task_id)
+
+            self._cleanup_stuck_items(task_id)
             
-            # Проверка, что задача действительно завершена
             if not self.check_task_completion(task_id):
                 logger.warning(f"Попытка финализировать незавершенную задачу {task_id}")
                 return False
             
-            # Подсчет результатов
             completed_count = TaskItem.objects.filter(
                 task_id=task_id,
                 status='completed'
@@ -247,31 +279,28 @@ class TaskScheduler:
                 status='blocked'
             ).count()
             
-            # Обновление счетчиков задачи
             task.completed_items = completed_count
             task.failed_items = failed_count
             
-            # Определение итогового статуса
-            if failed_count == task.total_items:
-                # Все items провалились
+            if task.total_items == 0:
+                task.stop()
+                logger.warning(f"Задача {task_id} остановлена: 0 items (discovery не нашел элементов)")
+            elif failed_count == task.total_items:
                 task.fail("Все элементы завершились с ошибкой")
                 logger.error(f"Задача {task_id} провалилась: все items с ошибками")
             elif completed_count > 0:
-                # Есть успешные items
                 task.complete()
                 logger.info(
-                    f"Задача {task_id} завершена успешно: "
+                    f"Задача {task_id} завершена: "
                     f"{completed_count} completed, {failed_count} failed, {blocked_count} blocked"
                 )
             else:
-                # Нет успешных items, но есть blocked
                 task.stop()
                 logger.warning(
                     f"Задача {task_id} остановлена: "
                     f"0 completed, {failed_count} failed, {blocked_count} blocked"
                 )
             
-            # Создание итоговой статистики
             self._create_task_statistics(task)
             
             return True
@@ -309,29 +338,12 @@ class TaskScheduler:
                 if count > 0:
                     error_breakdown[error_type] = count
             
-            # Подсчет полных и неполных записей
-            from .normalized_models import NormalizedVacancy
-            
-            # Получаем все вакансии, связанные с completed TaskItems
-            completed_vacancy_ids = TaskItem.objects.filter(
+            complete_count = TaskItem.objects.filter(
                 task=task,
                 status='completed',
-                result_vacancy_id__isnull=False
-            ).values_list('result_vacancy_id', flat=True)
-            
-            # Подсчет полных записей
-            complete_count = 0
-            incomplete_count = 0
-            
-            if completed_vacancy_ids:
-                # Используем батч-обработку для проверки полноты
-                vacancies = NormalizedVacancy.objects.filter(id__in=completed_vacancy_ids)
-                
-                for vacancy in vacancies:
-                    if vacancy.is_complete():
-                        complete_count += 1
-                    else:
-                        incomplete_count += 1
+                result_vacancy_id__isnull=False,
+            ).count()
+            incomplete_count = completed - complete_count
             
             # Создание статистики
             stats = ParsingStatistics.objects.create(

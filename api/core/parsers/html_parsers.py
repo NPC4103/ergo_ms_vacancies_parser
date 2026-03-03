@@ -361,10 +361,12 @@ class HeadHunterHTMLParser(BaseHTMLParser):
             }
             
             return data
-            
+
+        except (BlockedError, NetworkError):
+            raise
         except Exception as e:
             raise ParserError(f"Ошибка парсинга вакансии {item_id}: {e}")
-    
+
     def _extract_json_data(self, html_text: str, item_id: str) -> Dict[str, Any]:
         """
         Извлекает данные вакансии из JSON в HH-Lux-InitialState.
@@ -755,7 +757,7 @@ class HabrCareerHTMLParser(BaseHTMLParser):
     
     def fetch_item(self, item_id: str, config: Dict[str, Any]) -> Dict[str, Any]:
         """Получает детальную информацию о вакансии Habr Career в формате NormalizedVacancy."""
-        url = f"{self.BASE_URL}/vacancies/{item_id}"
+        url = config.get('url') or f"{self.BASE_URL}/vacancies/{item_id}"
         
         try:
             response = self._make_request(url)
@@ -790,7 +792,9 @@ class HabrCareerHTMLParser(BaseHTMLParser):
             }
             
             return data
-            
+
+        except (BlockedError, NetworkError):
+            raise
         except Exception as e:
             raise ParserError(f"Ошибка парсинга вакансии Habr {item_id}: {e}")
     
@@ -949,7 +953,9 @@ class SuperJobHTMLParser(BaseHTMLParser):
             }
             
             return data
-            
+
+        except (BlockedError, NetworkError):
+            raise
         except Exception as e:
             raise ParserError(f"Ошибка парсинга вакансии SuperJob {item_id}: {e}")
     

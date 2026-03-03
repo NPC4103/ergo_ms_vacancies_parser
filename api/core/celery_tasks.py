@@ -12,7 +12,6 @@ from celery import shared_task, group, chord
 from typing import Dict, Any, List, Optional
 
 from .models import ParsingTask, TaskItem
-from .normalized_models import NormalizedVacancy
 from .scheduler import default_scheduler
 from .parsers import ParserFactory
 # Импортируем утилиты из пакета tasks/ (директория), а не из этого файла tasks.py
@@ -321,47 +320,61 @@ def parse_items_worker(self, task_id: int, worker_id: str):
             logger.error(f"Worker {worker_id}: доступные парсеры: {ParserFactory.get_available_parsers()}")
             raise
         
+        import time
+        import random
+        from .parsers.base import BlockedError as _BlockedError
+
         processed_count = 0
-        
-        # Цикл claiming и обработки items
+        consecutive_blocks = 0
+        max_consecutive_blocks = task.config.get('max_consecutive_blocks', 5)
+
         while True:
-            # Проверка статуса задачи
             task.refresh_from_db()
             if task.status != 'running':
                 logger.info(f"Worker {worker_id}: задача {task_id} больше не running, завершение")
                 break
-            
-            # Claiming items через утилиту
+
             items = claim_items_for_worker(task_id=task_id, worker_id=worker_id, limit=10)
-            
+
             if not items:
                 logger.info(f"Worker {worker_id}: нет доступных items для задачи {task_id}")
                 break
-            
-            # Обработка каждого item
+
             for item in items:
                 try:
-                    # Обработка item через утилиту
                     result = process_item(item, parser, task, error_handler)
                     processed_count += 1
+                    consecutive_blocks = 0
                     metrics.record_item_processed(celery_task_id, success=True)
-                    
+
                     logger.info(f"Worker {worker_id}: успешно обработан item {item.id} (vacancy_id={result['vacancy_id']}, created={result['created']})")
-                    
+
                 except Exception as e:
                     logger.error(
                         f"Worker {worker_id}: ошибка при парсинге item {item.id} (source_item_id={item.source_item_id}, url={item.url}): {e}",
                         exc_info=True
                     )
-                    
-                    # Обработка ошибки через утилиту
+
                     handle_item_error(item, e, task, error_handler)
                     metrics.record_item_processed(celery_task_id, success=False)
-                
-                # Задержка между items (если указано в config)
-                import time
-                delay = task.config.get('delay', 0.5)
+
+                    if isinstance(e, _BlockedError) or 'captcha' in str(e).lower():
+                        consecutive_blocks += 1
+                        if consecutive_blocks >= max_consecutive_blocks:
+                            logger.warning(
+                                f"Worker {worker_id}: {consecutive_blocks} блокировок подряд, "
+                                f"остановка воркера для задачи {task_id}"
+                            )
+                            break
+                    else:
+                        consecutive_blocks = 0
+
+                base_delay = task.config.get('delay', 1.5)
+                delay = random.uniform(base_delay * 0.8, base_delay * 1.4)
                 time.sleep(delay)
+            else:
+                continue
+            break
         
         result = {'processed_count': processed_count, 'task_id': task_id}
         logger.info(f"Worker {worker_id} завершен для задачи {task_id}: обработано {processed_count} items")
