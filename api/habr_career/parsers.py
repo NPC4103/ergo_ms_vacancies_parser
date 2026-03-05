@@ -7,7 +7,6 @@ import time
 import random
 
 import requests
-from bs4 import BeautifulSoup
 
 from ..core.parsers import ParserFactory
 from ..core.parsers.base import BlockedError, NetworkError

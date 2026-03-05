@@ -1,0 +1,280 @@
+"""
+Конфигурация Celery Beat для модуля Habr Career.
+Плановое HTML-расписание.
+
+Доступные задачи:
+- parse_habr_vacancies_task            (активные вакансии)
+- parse_habr_archived_vacancies_task   (архивные вакансии)
+- parse_habr_all_vacancies_task        (активные + архивные)
+"""
+
+from typing import Dict, Any
+from celery.schedules import crontab
+
+from src.core.utils.celery_beat.base import CeleryBeatModuleConfig
+
+
+class HabrCareerCeleryBeatConfig(CeleryBeatModuleConfig):
+    """
+    Конфигурация периодических задач для парсинга Habr Career (HTML).
+
+    Логика:
+    - регулярный "пульс" активных вакансий днём;
+    - ночные более глубокие прогоны;
+    - отдельный weekly-прогон архивных для актуализации истории.
+    """
+
+    def __init__(self, module_name: str):
+        super().__init__(module_name)
+
+    def get_beat_schedule(self) -> Dict[str, Dict[str, Any]]:
+        return {
+            # ============================================================
+            # ЕЖЕДНЕВНЫЙ НОЧНОЙ ПОЛНЫЙ ПРОГОН (аналог daily high-priority)
+            # ============================================================
+            'hc-daily-full-scan': {
+                'task': 'modules.vacancies_parser.api.habr_career.tasks.parse_habr_all_vacancies_task',
+                'schedule': crontab(minute=20, hour=2),
+                'kwargs': {
+                    'pages': 15,
+                    'delay': 1.5,
+                    'get_details': True,
+                    'search_text': None,
+                },
+                'options': {
+                    'queue': 'habr_career',
+                    'priority': 9,
+                    'expires': 6 * 60 * 60,
+                },
+            },
+
+            # ============================================================
+            # ЯЗЫКИ - РАБОЧИЕ ДНИ (3 раза в день)
+            # ============================================================
+            'hc-languages-workdays-morning': {
+                'task': 'modules.vacancies_parser.api.habr_career.tasks.parse_habr_vacancies_task',
+                'schedule': crontab(minute=20, hour=6, day_of_week='1-5'),
+                'kwargs': {
+                    'pages': 6,
+                    'delay': 1.5,
+                    'get_details': True,
+                    'search_text': 'Python',
+                },
+                'options': {
+                    'queue': 'habr_career',
+                    'priority': 8,
+                    'expires': 4 * 60 * 60,
+                },
+            },
+            'hc-languages-workdays-noon': {
+                'task': 'modules.vacancies_parser.api.habr_career.tasks.parse_habr_vacancies_task',
+                'schedule': crontab(minute=20, hour=12, day_of_week='1-5'),
+                'kwargs': {
+                    'pages': 6,
+                    'delay': 1.5,
+                    'get_details': True,
+                    'search_text': 'JavaScript',
+                },
+                'options': {
+                    'queue': 'habr_career',
+                    'priority': 8,
+                    'expires': 4 * 60 * 60,
+                },
+            },
+            'hc-languages-workdays-evening': {
+                'task': 'modules.vacancies_parser.api.habr_career.tasks.parse_habr_vacancies_task',
+                'schedule': crontab(minute=20, hour=18, day_of_week='1-5'),
+                'kwargs': {
+                    'pages': 6,
+                    'delay': 1.5,
+                    'get_details': True,
+                    'search_text': 'Java',
+                },
+                'options': {
+                    'queue': 'habr_career',
+                    'priority': 8,
+                    'expires': 4 * 60 * 60,
+                },
+            },
+
+            # ============================================================
+            # ЯЗЫКИ - ВЫХОДНЫЕ (2 раза в день)
+            # ============================================================
+            'hc-languages-weekend-morning': {
+                'task': 'modules.vacancies_parser.api.habr_career.tasks.parse_habr_vacancies_task',
+                'schedule': crontab(minute=20, hour=10, day_of_week='0,6'),
+                'kwargs': {
+                    'pages': 5,
+                    'delay': 1.7,
+                    'get_details': True,
+                    'search_text': 'Python',
+                },
+                'options': {
+                    'queue': 'habr_career',
+                    'priority': 6,
+                    'expires': 6 * 60 * 60,
+                },
+            },
+            'hc-languages-weekend-evening': {
+                'task': 'modules.vacancies_parser.api.habr_career.tasks.parse_habr_vacancies_task',
+                'schedule': crontab(minute=20, hour=18, day_of_week='0,6'),
+                'kwargs': {
+                    'pages': 5,
+                    'delay': 1.7,
+                    'get_details': True,
+                    'search_text': 'JavaScript',
+                },
+                'options': {
+                    'queue': 'habr_career',
+                    'priority': 6,
+                    'expires': 6 * 60 * 60,
+                },
+            },
+
+            # ============================================================
+            # ФРЕЙМВОРКИ - РАБОЧИЕ ДНИ (3 раза/день)
+            # ============================================================
+            'hc-frameworks-workdays-morning': {
+                'task': 'modules.vacancies_parser.api.habr_career.tasks.parse_habr_vacancies_task',
+                'schedule': crontab(minute=35, hour=7, day_of_week='1-5'),
+                'kwargs': {
+                    'pages': 6,
+                    'delay': 1.5,
+                    'get_details': True,
+                    'search_text': 'React',
+                },
+                'options': {
+                    'queue': 'habr_career',
+                    'priority': 7,
+                    'expires': 4 * 60 * 60,
+                },
+            },
+            'hc-frameworks-workdays-noon': {
+                'task': 'modules.vacancies_parser.api.habr_career.tasks.parse_habr_vacancies_task',
+                'schedule': crontab(minute=35, hour=13, day_of_week='1-5'),
+                'kwargs': {
+                    'pages': 6,
+                    'delay': 1.5,
+                    'get_details': True,
+                    'search_text': 'Django',
+                },
+                'options': {
+                    'queue': 'habr_career',
+                    'priority': 7,
+                    'expires': 4 * 60 * 60,
+                },
+            },
+            'hc-frameworks-workdays-evening': {
+                'task': 'modules.vacancies_parser.api.habr_career.tasks.parse_habr_vacancies_task',
+                'schedule': crontab(minute=35, hour=19, day_of_week='1-5'),
+                'kwargs': {
+                    'pages': 6,
+                    'delay': 1.5,
+                    'get_details': True,
+                    'search_text': 'Vue',
+                },
+                'options': {
+                    'queue': 'habr_career',
+                    'priority': 7,
+                    'expires': 4 * 60 * 60,
+                },
+            },
+
+            # ============================================================
+            # ПУЛЬС ТОПОВЫХ ЗАПРОСОВ - РАБОЧИЕ ДНИ (каждые 3 часа)
+            # ============================================================
+            'hc-top-pulse-09': {
+                'task': 'modules.vacancies_parser.api.habr_career.tasks.parse_habr_vacancies_task',
+                'schedule': crontab(minute=20, hour=9, day_of_week='1-5'),
+                'kwargs': {'pages': 2, 'delay': 1.0, 'get_details': False, 'search_text': 'Python'},
+                'options': {'queue': 'habr_career', 'priority': 9, 'expires': 2 * 60 * 60},
+            },
+            'hc-top-pulse-12': {
+                'task': 'modules.vacancies_parser.api.habr_career.tasks.parse_habr_vacancies_task',
+                'schedule': crontab(minute=20, hour=12, day_of_week='1-5'),
+                'kwargs': {'pages': 2, 'delay': 1.0, 'get_details': False, 'search_text': 'JavaScript'},
+                'options': {'queue': 'habr_career', 'priority': 9, 'expires': 2 * 60 * 60},
+            },
+            'hc-top-pulse-15': {
+                'task': 'modules.vacancies_parser.api.habr_career.tasks.parse_habr_vacancies_task',
+                'schedule': crontab(minute=20, hour=15, day_of_week='1-5'),
+                'kwargs': {'pages': 2, 'delay': 1.0, 'get_details': False, 'search_text': 'DevOps'},
+                'options': {'queue': 'habr_career', 'priority': 9, 'expires': 2 * 60 * 60},
+            },
+            'hc-top-pulse-18': {
+                'task': 'modules.vacancies_parser.api.habr_career.tasks.parse_habr_vacancies_task',
+                'schedule': crontab(minute=20, hour=18, day_of_week='1-5'),
+                'kwargs': {'pages': 2, 'delay': 1.0, 'get_details': False, 'search_text': 'React'},
+                'options': {'queue': 'habr_career', 'priority': 9, 'expires': 2 * 60 * 60},
+            },
+            'hc-top-pulse-21': {
+                'task': 'modules.vacancies_parser.api.habr_career.tasks.parse_habr_vacancies_task',
+                'schedule': crontab(minute=20, hour=21, day_of_week='1-5'),
+                'kwargs': {'pages': 2, 'delay': 1.0, 'get_details': False, 'search_text': 'Django'},
+                'options': {'queue': 'habr_career', 'priority': 9, 'expires': 2 * 60 * 60},
+            },
+
+            # ============================================================
+            # НОЧНОЙ DEEP SCAN
+            # ============================================================
+            'hc-nightly-deep-scan': {
+                'task': 'modules.vacancies_parser.api.habr_career.tasks.parse_habr_all_vacancies_task',
+                'schedule': crontab(minute=20, hour=3),
+                'kwargs': {
+                    'pages': 10,
+                    'delay': 2.0,
+                    'get_details': True,
+                    'search_text': None,
+                },
+                'options': {
+                    'queue': 'habr_career',
+                    'priority': 6,
+                    'expires': 4 * 60 * 60,
+                },
+            },
+
+            # ============================================================
+            # WEEKLY COMPREHENSIVE (воскресенье ночью)
+            # ============================================================
+            'hc-weekly-comprehensive': {
+                'task': 'modules.vacancies_parser.api.habr_career.tasks.parse_habr_all_vacancies_task',
+                'schedule': crontab(minute=20, hour=4, day_of_week='sunday'),
+                'kwargs': {
+                    'pages': 12,
+                    'delay': 2.2,
+                    'get_details': True,
+                    'search_text': None,
+                },
+                'options': {
+                    'queue': 'habr_career',
+                    'priority': 7,
+                    'expires': 6 * 60 * 60,
+                },
+            },
+
+            # ============================================================
+            # WEEKLY ARCHIVE REFRESH (понедельник рано утром)
+            # ============================================================
+            'hc-weekly-archived-refresh': {
+                'task': 'modules.vacancies_parser.api.habr_career.tasks.parse_habr_archived_vacancies_task',
+                'schedule': crontab(minute=50, hour=5, day_of_week='monday'),
+                'kwargs': {
+                    'pages': 8,
+                    'delay': 1.8,
+                    'search_text': None,
+                },
+                'options': {
+                    'queue': 'habr_career',
+                    'priority': 5,
+                    'expires': 6 * 60 * 60,
+                },
+            },
+        }
+
+    def get_additional_beat_config(self) -> Dict[str, Any]:
+        return {
+            'habr_career_beat_enabled': True,
+            'habr_career_beat_max_interval': 300,
+            'habr_career_beat_sync_every': 60,
+        }
+
