@@ -45,13 +45,18 @@ _USER_AGENTS = [
     '(KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36 Edg/131.0.0.0',
 ]
 
-_MIN_REQUEST_SPACING = 2.0
-_MAX_REQUEST_SPACING = 5.0
-_THROTTLE_PAUSE_INTERVAL = (15, 30)
-_THROTTLE_PAUSE_DURATION = (10.0, 30.0)
-_BLOCK_BASE_WAIT = 30.0
-_BLOCK_MAX_WAIT = 300.0
+_MIN_REQUEST_SPACING = 1.5
+_MAX_REQUEST_SPACING = 3.75
+_THROTTLE_PAUSE_INTERVAL = (120, 220)
+_THROTTLE_PAUSE_DURATION = (7.5, 22.5)
+_BLOCK_BASE_WAIT = 22.5
+_BLOCK_MAX_WAIT = 225.0
 _MAX_BLOCK_RETRIES = 3
+
+
+def _format_duration(seconds: float) -> str:
+    """Форматирует длительность для логов только в секундах."""
+    return f"{seconds:.2f} сек"
 
 
 class HeadHunterAPIParserOverride(HeadHunterAPIParser):
@@ -93,7 +98,7 @@ class HeadHunterAPIParserOverride(HeadHunterAPIParser):
         elapsed = time.monotonic() - self._last_request_time
         target = max(
             _MIN_REQUEST_SPACING,
-            min(_MAX_REQUEST_SPACING, random.gauss(3.5, 1.0)),
+            min(_MAX_REQUEST_SPACING, random.gauss(2.625, 0.75)),
         )
         if elapsed < target:
             time.sleep(target - elapsed)
@@ -103,8 +108,8 @@ class HeadHunterAPIParserOverride(HeadHunterAPIParser):
         if self._request_count >= self._next_throttle_at:
             pause = random.uniform(*_THROTTLE_PAUSE_DURATION)
             logger.info(
-                "[API][HH] Пауза %.0f сек после %d запросов",
-                pause, self._request_count,
+                "[API][HH] Пауза %s после %d запросов",
+                _format_duration(pause), self._request_count,
             )
             time.sleep(pause)
             self._request_count = 0
@@ -124,8 +129,8 @@ class HeadHunterAPIParserOverride(HeadHunterAPIParser):
                     retry_after = int(response.headers.get('Retry-After', 60))
                     wait = min(retry_after, _BLOCK_MAX_WAIT)
                     logger.warning(
-                        "[API][HH] Rate limit (429) для %s, ожидание %d сек",
-                        url, wait,
+                        "[API][HH] Rate limit (429) для %s, ожидание %s",
+                        url, _format_duration(wait),
                     )
                     time.sleep(wait)
                     self._rotate_session()
@@ -150,8 +155,8 @@ class HeadHunterAPIParserOverride(HeadHunterAPIParser):
             except requests.exceptions.Timeout as e:
                 last_error = e
                 self.logger.warning(
-                    "[API][HH] Таймаут %s (попытка %d/%d)",
-                    url, attempt + 1, self.max_retries,
+                    "[API][HH] Таймаут %s (timeout=%s, попытка %d/%d)",
+                    url, _format_duration(float(self.timeout)), attempt + 1, self.max_retries,
                 )
             except requests.RequestException as e:
                 last_error = e
@@ -161,7 +166,7 @@ class HeadHunterAPIParserOverride(HeadHunterAPIParser):
                 )
 
             if attempt < self.max_retries - 1:
-                delay = min(2 ** attempt + random.uniform(0.5, 2.0), 15)
+                delay = min((0.75 * (2 ** attempt)) + random.uniform(0.375, 1.5), 11.25)
                 time.sleep(delay)
 
         raise NetworkError(
@@ -252,8 +257,8 @@ class HeadHunterAPIParserOverride(HeadHunterAPIParser):
                     )
                     logger.warning(
                         "[API][HH] Блокировка #%d для вакансии %s, "
-                        "ожидание %.0f сек, ротация сессии",
-                        block_attempt + 1, item_id, wait,
+                        "ожидание %s, ротация сессии",
+                        block_attempt + 1, item_id, _format_duration(wait),
                     )
                     time.sleep(wait)
                     self._rotate_session()

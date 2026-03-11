@@ -17,6 +17,10 @@ from ..models import Vacancy
 
 logger = logging.getLogger('modules.vacancies_parser.headhunter')
 
+
+def _format_duration(seconds: float) -> str:
+    return f"{seconds:.2f} сек"
+
 def parse_vacancies_by_text(text_list, area=113, pages=2, delay=1.0, get_details=True,
                            date_from=None, date_to=None):
     """
@@ -271,7 +275,7 @@ def parse_all_vacancies(pages_per_area=5, delay=1.0, max_total_pages=100, areas_
         
         # Задержка между регионами
         if i < len(areas):
-            logger.debug('Ожидание %.1f сек перед следующим регионом...', delay)
+            logger.debug('Ожидание %s перед следующим регионом...', _format_duration(delay))
             time.sleep(delay)
     
     # Парсинг по профессиональным ролям (если включено)

@@ -23,6 +23,16 @@ logger = logging.getLogger('modules.vacancies_parser.headhunter')
 
 logger = logging.getLogger('modules.vacancies_parser.headhunter')
 
+
+def _format_duration(seconds: float) -> str:
+    return f"{seconds:.2f} сек"
+
+
+def _speed_cap_delay(value: float, *, min_value: float = 0.0, max_value: float = 0.25) -> float:
+    """Ограничивает задержки для ускоренного профиля парсинга."""
+    return max(min_value, min(float(value), max_value))
+
+
 @shared_task(
     bind=True,
     max_retries=3,
@@ -36,7 +46,7 @@ def parse_vacancies_by_professional_roles(
     self,
     area: int = 113,
     pages: int = 3,
-    delay: float = 2.0,
+    delay: float = 1.5,
     get_details: bool = True,
     max_concurrent_roles: int = 5,
     batch_size: int = 10,
@@ -408,7 +418,7 @@ def parse_vacancies_by_professional_roles(
                                         logger.warning(f'Ошибка при пакетной загрузке деталей ролей: {e}')
                                     # Минимальная пауза между пачками, только если задержки разрешены
                                     if not no_delays and delay > 0 and i + detail_chunk_size < len(vacancy_ids):
-                                        time.sleep(min(delay * 0.2, 0.5))
+                                        time.sleep(_speed_cap_delay(delay * 0.15, min_value=0.08, max_value=0.375))
 
                             # Применяем детали и сохраняем
                             for vacancy_id in vacancy_ids:
@@ -454,7 +464,7 @@ def parse_vacancies_by_professional_roles(
 
                         # Задержка между страницами для обхода rate limiting
                         if not no_delays and page < actual_pages - 1:
-                            time.sleep(delay)
+                            time.sleep(_speed_cap_delay(delay * 0.75, min_value=0.15, max_value=1.5))
 
                     # Логируем итоги парсинга роли
                     logger.info(f'Роль {role.name} завершена: обработано {role_vacancies} вакансий, '
@@ -484,12 +494,12 @@ def parse_vacancies_by_professional_roles(
 
                 # Задержка между ролями
                 if not no_delays and delay > 0:
-                    time.sleep(delay)
+                    time.sleep(_speed_cap_delay(delay * 0.75, min_value=0.15, max_value=1.5))
 
             # Дополнительная задержка между батчами (только если батчи включены)
             if not no_delays and effective_batch_size < len(it_roles) and i + effective_batch_size < len(it_roles):
-                batch_delay = delay * 2
-                logger.info(f'Задержка между батчами: {batch_delay} сек')
+                batch_delay = _speed_cap_delay(delay * 1.5, min_value=0.5, max_value=3.0)
+                logger.info(f'Задержка между батчами: {_format_duration(float(batch_delay))}')
                 time.sleep(batch_delay)
 
         total_time = time.time() - task_start_time
@@ -907,15 +917,15 @@ def parse_single_role_batch(
 
     # Добавляем внутреннюю задержку старта для координации воркеров
     if worker_id == 1:
-        start_delay = 5  # Первый воркер ждет 5 сек
+        start_delay = 3.75
     elif worker_id == 2:
-        start_delay = 30  # Второй воркер ждет 30 сек
+        start_delay = 22.5
     elif worker_id == 3:
-        start_delay = 60  # Третий воркер ждет 60 сек
+        start_delay = 45.0
     else:
-        start_delay = 60 + (worker_id-3) * 30  # Остальные ждут 90+ сек
+        start_delay = 45.0 + (worker_id - 3) * 22.5
 
-    logger.info(f'[Worker {worker_id}] Ожидание {start_delay} сек перед стартом...')
+    logger.info(f'[Worker {worker_id}] Ожидание {_format_duration(float(start_delay))} перед стартом...')
     time.sleep(start_delay)
     logger.info(f'[Worker {worker_id}] Начинаем парсинг после задержки')
 
@@ -940,13 +950,16 @@ def parse_single_role_batch(
         logger.error(f'Worker {worker_id}: Критическая ошибка в батче: {e}', exc_info=True)
 
         # Умная логика повторных попыток
-        retry_delay = min(60 * (2 ** self.request.retries), 600)  # Экспоненциальная задержка, макс 10 мин
+        retry_delay = min(8 * (2 ** self.request.retries), 60)
 
         # Если это ошибка API (rate limit), увеличиваем задержку
         if '400' in str(e) or 'rate' in str(e).lower() or 'block' in str(e).lower():
-            retry_delay = min(retry_delay * 2, 1200)  # Удваиваем задержку для API ошибок, макс 20 мин
+            retry_delay = min(retry_delay * 1.5, 90)
 
-        logger.warning(f'Worker {worker_id}: Повторная попытка через {retry_delay} сек (попытка {self.request.retries + 1}/5)')
+        logger.warning(
+            f'Worker {worker_id}: Повторная попытка через {_format_duration(float(retry_delay))} '
+            f'(попытка {self.request.retries + 1}/5)'
+        )
         raise self.retry(countdown=retry_delay, exc=e)
 
 
@@ -1091,15 +1104,20 @@ def _parse_roles_batch(it_roles, area, pages, delay, get_details,
                             error_msg = str(api_error).lower()
                             if '403' in error_msg or 'forbidden' in error_msg or 'доступ запрещён' in error_msg:
                                 consecutive_403_errors += 1
+                                pause_403 = 1.5
                                 # Простая пауза 2 секунды при 403
                                 logger.warning(f'{worker_prefix}Доступ запрещён (403) для роли {role.name} на странице {page + 1}. '
-                                              f'Пауза 2 сек...')
-                                time.sleep(2.0)
+                                              f'Пауза {_format_duration(pause_403)}...')
+                                time.sleep(pause_403)
                                 continue
 
                             elif '400' in error_msg or 'rate' in error_msg or 'block' in error_msg:
-                                logger.warning(f'{worker_prefix}Роль {role.name}: API rate limit на странице {page + 1}, пауза 30 сек')
-                                time.sleep(30)  # Длительная пауза при rate limit
+                                rate_limit_pause = 22.5
+                                logger.warning(
+                                    f'{worker_prefix}Роль {role.name}: API rate limit на странице {page + 1}, '
+                                    f'пауза {_format_duration(rate_limit_pause)}'
+                                )
+                                time.sleep(rate_limit_pause)  # Длительная пауза при rate limit
                                 continue
                             else:
                                 logger.error(f'{worker_prefix}Роль {role.name}: API ошибка на странице {page + 1}: {api_error}')
@@ -1158,17 +1176,22 @@ def _parse_roles_batch(it_roles, area, pages, delay, get_details,
                                     total_403_errors += 1
                                     total_details_errors += 1
                                     if consecutive_403_errors >= max_consecutive_403:
+                                        stop_pause = 3.75
                                         logger.error(f'{worker_prefix}СЛИШКОМ МНОГО 403 ОШИБОК ПРИ ЗАГРУЗКЕ ДЕТАЛЕЙ ({consecutive_403_errors}/{max_consecutive_403}). '
-                                                    f'Останавливаем worker {worker_id} на 5 секунд...')
-                                        time.sleep(5)  # 5 секунд паузы
+                                                    f'Останавливаем worker {worker_id} на {_format_duration(stop_pause)}...')
+                                        time.sleep(stop_pause)  # 5 секунд паузы
                                         consecutive_403_errors = 0
                                         continue
 
                                     # Простая пауза 2 секунды при 403
                                     # Логируем только каждую 5-ю ошибку
+                                    details_pause = 1.5
                                     if consecutive_403_errors % 5 == 0 or consecutive_403_errors <= 3:
-                                        logger.warning(f'{worker_prefix}Доступ запрещён (403) при загрузке деталей (всего: {consecutive_403_errors}). Пауза 2 сек...')
-                                    time.sleep(2.0)
+                                        logger.warning(
+                                            f'{worker_prefix}Доступ запрещён (403) при загрузке деталей '
+                                            f'(всего: {consecutive_403_errors}). Пауза {_format_duration(details_pause)}...'
+                                        )
+                                    time.sleep(details_pause)
                                     continue
 
                                 # Для других ошибок логируем только первую
@@ -1218,7 +1241,11 @@ def _parse_roles_batch(it_roles, area, pages, delay, get_details,
 
                     # Задержка между страницами (минимум 0.1 сек даже при no_delays для предотвращения блокировки)
                     if page < actual_pages - 1:
-                        actual_delay = max(0.1, delay) if no_delays else delay
+                        actual_delay = _speed_cap_delay(
+                            delay * 0.75 if not no_delays else delay * 0.4,
+                            min_value=0.1,
+                            max_value=1.5, 
+                        )
                         time.sleep(actual_delay)
 
                 # Итоги роли
@@ -1236,13 +1263,21 @@ def _parse_roles_batch(it_roles, area, pages, delay, get_details,
 
             # Задержка между ролями (минимум 0.1 сек даже при no_delays)
             if delay > 0:
-                actual_delay = max(0.1, delay) if no_delays else delay
+                actual_delay = _speed_cap_delay(
+                    delay * 0.75 if not no_delays else delay * 0.4,
+                    min_value=0.1,
+                    max_value=1.5,
+                )
                 time.sleep(actual_delay)
 
         # Задержка между батчами (минимум 0.5 сек даже при no_delays)
         if effective_batch_size < len(it_roles) and i + effective_batch_size < len(it_roles):
-            batch_delay = max(0.5, delay * 2) if no_delays else (delay * 2)
-            logger.info(f'{worker_prefix}Задержка между батчами: {batch_delay} сек')
+            batch_delay = _speed_cap_delay(
+                delay * (1.5 if not no_delays else 0.6),
+                min_value=0.4,
+                max_value=3.0,
+            )
+            logger.info(f'{worker_prefix}Задержка между батчами: {_format_duration(float(batch_delay))}')
             time.sleep(batch_delay)
 
     # Финальная статистика

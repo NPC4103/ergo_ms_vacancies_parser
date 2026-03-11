@@ -69,18 +69,18 @@ _BROWSER_HEADERS_FIREFOX = {
     'Priority': 'u=0, i',
 }
 
-_MIN_PAGE_DELAY = 2.0
-_MAX_PAGE_DELAY = 5.0
-_MIN_WARMUP_DELAY = 1.5
-_MAX_WARMUP_DELAY = 3.5
+_MIN_PAGE_DELAY = 1.5
+_MAX_PAGE_DELAY = 3.75
+_MIN_WARMUP_DELAY = 1.125
+_MAX_WARMUP_DELAY = 2.625
 
-_MIN_REQUEST_SPACING = 3.0
-_MAX_REQUEST_SPACING = 8.0
-_THROTTLE_PAUSE_INTERVAL = (12, 25)
-_THROTTLE_PAUSE_DURATION = (15.0, 45.0)
-_CAPTCHA_BASE_WAIT = 30.0
-_CAPTCHA_MAX_WAIT = 300.0
-_MAX_CAPTCHA_RETRIES = 3
+_MIN_REQUEST_SPACING = 2.25
+_MAX_REQUEST_SPACING = 6.0
+_THROTTLE_PAUSE_INTERVAL = (90, 180)
+_THROTTLE_PAUSE_DURATION = (11.25, 33.75)
+_CAPTCHA_BASE_WAIT = 22.5
+_CAPTCHA_MAX_WAIT = 225.0
+_MAX_CAPTCHA_RETRIES = 2
 
 _CAPTCHA_URL_PATTERNS = re.compile(
     r'captcha|challenge|verify|blocked|firewall',
@@ -103,6 +103,11 @@ _VACANCY_LINK_RE = re.compile(r'^/vacancy/(\d+)(?:[?#].*)?$')
 _VACANCY_ABSOLUTE_RE = re.compile(
     r'https?://[a-z]+\.hh\.ru(/vacancy/(\d+))(?:[?#].*)?'
 )
+
+
+def _format_duration(seconds: float) -> str:
+    """Форматирует длительность для логов только в секундах."""
+    return f"{seconds:.2f} сек"
 
 
 def _extract_visible_text(html: str) -> str:
@@ -205,7 +210,7 @@ class HeadHunterHTMLParserOverride(HeadHunterHTMLParser):
         elapsed = time.monotonic() - self._last_request_time
         target = max(
             _MIN_REQUEST_SPACING,
-            min(_MAX_REQUEST_SPACING, random.gauss(5.0, 1.5)),
+            min(_MAX_REQUEST_SPACING, random.gauss(3.75, 1.125)),
         )
         if elapsed < target:
             time.sleep(target - elapsed)
@@ -215,8 +220,8 @@ class HeadHunterHTMLParserOverride(HeadHunterHTMLParser):
         if self._request_count >= self._next_throttle_at:
             pause = random.uniform(*_THROTTLE_PAUSE_DURATION)
             logger.info(
-                "[HTML][HH] Пауза %.0f сек после %d запросов",
-                pause, self._request_count,
+                "[HTML][HH] Пауза %s после %d запросов",
+                _format_duration(pause), self._request_count,
             )
             time.sleep(pause)
             self._request_count = 0
@@ -242,9 +247,9 @@ class HeadHunterHTMLParserOverride(HeadHunterHTMLParser):
                         _CAPTCHA_MAX_WAIT,
                     )
                     logger.warning(
-                        "[HTML][HH] Капча #%d для %s, ожидание %.0f сек, "
+                        "[HTML][HH] Капча #%d для %s, ожидание %s, "
                         "ротация сессии",
-                        captcha_attempt + 1, url, wait,
+                        captcha_attempt + 1, url, _format_duration(wait),
                     )
                     time.sleep(wait)
                     self._rotate_session()
@@ -308,7 +313,7 @@ class HeadHunterHTMLParserOverride(HeadHunterHTMLParser):
                 )
 
             if attempt < self.max_retries - 1:
-                delay = min(2 ** attempt + random.uniform(0.5, 2.0), 15)
+                delay = min((0.75 * (2 ** attempt)) + random.uniform(0.375, 1.5), 11.25)
                 time.sleep(delay)
 
         raise NetworkError(
@@ -372,8 +377,8 @@ class HeadHunterHTMLParserOverride(HeadHunterHTMLParser):
                 if page < max_pages:
                     delay = random.uniform(_MIN_PAGE_DELAY, _MAX_PAGE_DELAY)
                     logger.debug(
-                        "[HTML][HH] Задержка %.1f сек перед страницей %s",
-                        delay, page,
+                        "[HTML][HH] Задержка %s перед страницей %s",
+                        _format_duration(delay), page,
                     )
                     time.sleep(delay)
 

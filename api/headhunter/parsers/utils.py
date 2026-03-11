@@ -124,9 +124,9 @@ class ProxyRotator:
 
     def should_rotate(self, requests_since_rotation: int, time_since_rotation: float) -> bool:
         """Определить, нужно ли ротировать прокси"""
-        # Ротировать каждые 20-50 запросов или каждые 2-8 минут
-        return (requests_since_rotation >= random.randint(20, 50) or
-                time_since_rotation >= random.randint(120, 480))
+        # Редкая, но более безопасная ротация
+        return (requests_since_rotation >= random.randint(120, 260) or
+                time_since_rotation >= random.randint(600, 1200))
 
     def test_proxy(self, proxy: Dict[str, str], timeout: float = 5.0) -> bool:
         """Протестировать работоспособность прокси"""
@@ -204,9 +204,9 @@ class UserAgentRotator:
 
     def should_rotate(self, requests_since_rotation: int, time_since_rotation: float) -> bool:
         """Определить, нужно ли ротировать User-Agent"""
-        # Ротировать каждые 50-100 запросов или каждые 5-15 минут
-        return (requests_since_rotation >= random.randint(50, 100) or
-                time_since_rotation >= random.randint(300, 900))
+        # Редкая, но более безопасная ротация
+        return (requests_since_rotation >= random.randint(150, 320) or
+                time_since_rotation >= random.randint(900, 1800))
 
 
 class RequestJitter:
@@ -221,8 +221,8 @@ class RequestJitter:
         # Добавляем случайное отклонение ±30% от базовой задержки
         jitter = random.uniform(-self.jitter_factor, self.jitter_factor)
         delay = self.base_delay * (1 + jitter)
-        # Минимум 0.1 секунды, максимум не больше base_delay * 2
-        return max(0.1, min(delay, self.base_delay * 2))
+        # Минимум 0.075 секунды, максимум не больше base_delay * 2
+        return max(0.075, min(delay, self.base_delay * 2))
 
     def get_human_like_delay(self, min_delay: float = 0.5, max_delay: float = 3.0) -> float:
         """Получить задержку, имитирующую человеческое поведение"""
@@ -235,11 +235,11 @@ class RequestJitter:
 
     def get_page_turn_delay(self) -> float:
         """Задержка при перелистывании страниц (дольше, как будто читают)"""
-        return random.uniform(2.0, 5.0)
+        return random.uniform(1.5, 3.75)
 
     def get_detail_request_delay(self) -> float:
         """Задержка при запросе деталей вакансии"""
-        return random.uniform(0.5, 2.0)
+        return random.uniform(0.375, 1.5)
 
 
 @dataclass
@@ -327,17 +327,17 @@ class IPBlockingTracker:
         self._last_403_time = current_time
         
         # Если много 403 за короткое время - увеличиваем множитель задержки
-        if self._403_count >= 10:
-            self._adaptive_delay_multiplier = min(self._adaptive_delay_multiplier * 1.5, 5.0)
+        if self._403_count >= 12:
+            self._adaptive_delay_multiplier = min(self._adaptive_delay_multiplier * 1.3, 3.0)
             logger.warning(f'[BLOCKING] Обнаружено {self._403_count} ошибок 403. Увеличиваем задержки в {self._adaptive_delay_multiplier:.1f}x')
     
     def reset_on_success(self) -> None:
         """Сбросить счетчик при успешном запросе"""
         if self._403_count > 0:
             # Постепенно уменьшаем множитель при успешных запросах
-            self._adaptive_delay_multiplier = max(self._adaptive_delay_multiplier * 0.95, 1.0)
+            self._adaptive_delay_multiplier = max(self._adaptive_delay_multiplier * 0.94, 1.0)
             # Сбрасываем счетчик если прошло достаточно времени
-            if time.time() - self._last_403_time > 300:  # 5 минут без 403
+            if time.time() - self._last_403_time > 240:  # 4 минуты без 403
                 self._403_count = 0
                 self._adaptive_delay_multiplier = 1.0
     
