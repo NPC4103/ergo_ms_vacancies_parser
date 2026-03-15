@@ -25,11 +25,11 @@ logger = logging.getLogger('modules.vacancies_parser.headhunter.async')
 class AsyncParsingConfig:
     """Конфигурация асинхронного парсинга"""
     max_concurrent_requests: int = 10  # Максимум одновременных запросов
-    request_delay: float = 0.1  # Задержка между запросами (сек)
-    timeout: int = 30  # Таймаут запроса (сек)
+    request_delay: float = 0.075  # Задержка между запросами (сек)
+    timeout: int = 23  # Таймаут запроса (сек)
     max_retries: int = 3  # Максимум попыток
-    base_retry_delay: float = 1.0  # Базовая задержка перед повтором
-    max_retry_delay: float = 60.0  # Максимальная задержка перед повтором
+    base_retry_delay: float = 0.75  # Базовая задержка перед повтором
+    max_retry_delay: float = 45.0  # Максимальная задержка перед повтором
 
 
 class AsyncHeadHunterParser:

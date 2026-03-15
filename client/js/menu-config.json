@@ -16,6 +16,10 @@
         {
           "routeName": "VacanciesParserResults",
           "name": "Результаты"
+        },
+        {
+          "routeName": "VacanciesList",
+          "name": "Вакансии"
         }
       ]
     }

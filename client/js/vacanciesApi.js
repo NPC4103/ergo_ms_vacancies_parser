@@ -1,5 +1,5 @@
 import { apiClient } from '@/js/api/manager'
-import { endpoints } from './endpoints'
+import { endpoints, getSourceEndpoints } from './endpoints'
 
 export const vacanciesApi = {
   // Получение списка вакансий
@@ -12,52 +12,81 @@ export const vacanciesApi = {
     return await apiClient.get(endpoints.vacancies.detail(id))
   },
 
-  // Получение статистики
-  async getStats(params = {}) {
-    return await apiClient.get(endpoints.vacancies.stats, { params })
-  },
-
-  // Получение версий вакансии
-  async getVersions(id) {
-    return await apiClient.get(endpoints.vacancies.versions(id))
-  },
-
-  // Получение деталей версии
-  async getVersionDetail(id, versionNumber) {
-    return await apiClient.get(endpoints.vacancies.versionDetail(id), {
-      params: { version: versionNumber }
-    })
-  },
-
-  // Получение истории изменений
   async getChanges(id, versionNumber = null) {
     const params = versionNumber ? { version: versionNumber } : {}
     return await apiClient.get(endpoints.vacancies.changes(id), { params })
   },
 
-  // Парсинг одной вакансии
-  async parseSingle(vacancyId, forceUpdate = false) {
-    return await apiClient.post(endpoints.vacancies.parseSingle, {
-      vacancy_id: vacancyId,
-      force_update: forceUpdate
+  // одинаковая структура для всех парсеров
+
+  async getVersions(source, id) {
+    const ep = getSourceEndpoints(source)
+    return await apiClient.get(ep.vacancies.versions(id))
+  },
+
+  async getVersionDetail(source, id, versionNumber) {
+    const ep = getSourceEndpoints(source)
+    return await apiClient.get(ep.vacancies.versionDetail(id), {
+      params: { version: versionNumber }
     })
   },
 
-  // Получение статуса задачи
-  async getTaskStatus(taskId) {
-    return await apiClient.get(endpoints.vacancies.taskStatus, {
+  async getStats(source, params = {}) {
+    const ep = getSourceEndpoints(source)
+    return await apiClient.get(ep.vacancies.stats, { params })
+  },
+
+  async getTaskStatus(source, taskId) {
+    const ep = getSourceEndpoints(source)
+    return await apiClient.get(ep.vacancies.taskStatus, {
       params: { task_id: taskId }
     })
   },
 
-  // Парсинг по профессиональным ролям
-  async parseByRoles(config = {}) {
-    return await apiClient.post(endpoints.parsing.parseByRoles, config)
+  async parseSingle(source, data) {
+    const ep = getSourceEndpoints(source)
+    return await apiClient.post(ep.vacancies.parseSingle, data)
   },
 
-  // Парсинг по технологиям
-  async parseByTechnologies(config = {}) {
-    return await apiClient.post(endpoints.parsing.parseByTechnologies, config)
+  async getDetails(source, data) {
+    const ep = getSourceEndpoints(source)
+    return await apiClient.post(ep.parsing.getDetails, data)
+  },
+
+  // ====== Source-specific parsing control ======
+
+  async parseByText(source, data) {
+    const ep = getSourceEndpoints(source)
+    return await apiClient.post(ep.parsing.parseByText, data)
+  },
+
+  async parseAll(source, data) {
+    const ep = getSourceEndpoints(source)
+    return await apiClient.post(ep.parsing.parseAll, data)
+  },
+
+  async parseByConfig(source, data) {
+    const ep = getSourceEndpoints(source)
+    return await apiClient.post(ep.parsing.parseByConfig, data)
+  },
+
+  async parseByRoles(source, data) {
+    const ep = getSourceEndpoints(source)
+    return await apiClient.post(ep.parsing.parseByRoles, data)
+  },
+
+  async parseByTechnologies(source, data) {
+    const ep = getSourceEndpoints(source)
+    return await apiClient.post(ep.parsing.parseByTechnologies, data)
+  },
+
+  async parseByCatalogues(source, data) {
+    const ep = getSourceEndpoints(source)
+    return await apiClient.post(ep.parsing.parseByCatalogues, data)
+  },
+
+  async getCatalogues(source) {
+    const ep = getSourceEndpoints(source)
+    return await apiClient.get(ep.parsing.catalogues)
   }
 }
-

@@ -78,6 +78,14 @@ const goToPage = (page) => {
   updateFilters()
 }
 
+const SOURCE_LABELS = {
+  headhunter: 'HeadHunter',
+  habr_career: 'Habr Career',
+  superjob: 'SuperJob'
+}
+
+const getSourceLabel = (source) => SOURCE_LABELS[source] || source
+
 const goToVacancy = (id) => {
   router.push({ name: 'VacancyDetail', params: { id } })
 }
@@ -236,9 +244,9 @@ watch(() => route.query, (newQuery) => {
             <DollarSign :size="16" />
             <span>{{ formatSalary(vacancy) }}</span>
           </div>
-          <div v-if="vacancy.city" class="vacancy-location">
+          <div v-if="vacancy.area_name" class="vacancy-location">
             <MapPin :size="16" />
-            <span>{{ vacancy.city }}</span>
+            <span>{{ vacancy.area_name }}</span>
           </div>
           <div class="vacancy-date">
             <Calendar :size="16" />
@@ -260,14 +268,14 @@ watch(() => route.query, (newQuery) => {
         </div>
 
         <a 
-          v-if="vacancy.url"
-          :href="vacancy.url" 
+          v-if="vacancy.source_url"
+          :href="vacancy.source_url" 
           target="_blank"
           @click.stop
           class="vacancy-link"
         >
           <ExternalLink :size="16" />
-          Открыть на HH
+          Открыть на {{ getSourceLabel(vacancy.source) }}
         </a>
       </div>
     </div>

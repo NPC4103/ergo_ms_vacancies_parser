@@ -11,17 +11,28 @@ const route = useRoute()
 const router = useRouter()
 const toast = useToast()
 
-const { loadVacancy, parseSingle, getTaskStatus, loading } = useVacancies()
+const { loadVacancy, loading } = useVacancies()
 
 const vacancy = ref(null)
 const versions = ref([])
 const showVersions = ref(false)
-const parsingTask = ref(null)
 const showConfirmDialog = ref(false)
 
-const formatSalary = (vacancy) => {
-  if (!vacancy) return null
-  return vacancy.salary_display || null
+const SOURCE_LABELS = {
+  headhunter: 'HeadHunter',
+  habr_career: 'Habr Career',
+  superjob: 'SuperJob'
+}
+
+const vacancySource = computed(() => vacancy.value?.source || '')
+
+const sourceLabel = computed(() =>
+  SOURCE_LABELS[vacancySource.value] || vacancySource.value
+)
+
+const formatSalary = (v) => {
+  if (!v) return null
+  return v.salary_display || null
 }
 
 const formatDate = (dateString) => {
@@ -37,16 +48,17 @@ const formatDate = (dateString) => {
 const loadVacancyData = async () => {
   try {
     vacancy.value = await loadVacancy(route.params.id)
-  } catch (error) {
+  } catch (err) {
     toast.error('Ошибка при загрузке вакансии')
   }
 }
 
 const loadVersions = async () => {
+  if (!vacancy.value) return
   try {
-    const response = await vacanciesApi.getVersions(route.params.id)
+    const response = await vacanciesApi.getVersions(vacancySource.value, route.params.id)
     versions.value = response.data
-  } catch (error) {
+  } catch (err) {
     toast.error('Ошибка при загрузке версий')
   }
 }
@@ -57,29 +69,32 @@ const handleParse = async () => {
 
 const confirmParse = async () => {
   showConfirmDialog.value = false
+  if (!vacancy.value) return
+
+  const source = vacancySource.value
   try {
-    const result = await parseSingle(vacancy.value.hh_id, true)
-    parsingTask.value = result.task_id
-    toast.success('Парсинг запущен')
-    
-    // Проверяем статус задачи
+    const result = await vacanciesApi.getDetails(source, {
+      vacancy_id: vacancy.value.source_id
+    })
+    toast.success('Обновление вакансии запущено')
+
     const checkStatus = setInterval(async () => {
       try {
-        const status = await getTaskStatus(parsingTask.value)
-        if (status.status === 'SUCCESS' || status.status === 'FAILURE') {
+        const status = await vacanciesApi.getTaskStatus(source, result.data.task_id)
+        if (status.data.status === 'SUCCESS' || status.data.status === 'FAILURE') {
           clearInterval(checkStatus)
-          if (status.status === 'SUCCESS') {
+          if (status.data.status === 'SUCCESS') {
             toast.success('Вакансия обновлена')
             loadVacancyData()
           } else {
             toast.error('Ошибка при парсинге')
           }
         }
-      } catch (error) {
+      } catch (err) {
         clearInterval(checkStatus)
       }
     }, 2000)
-  } catch (error) {
+  } catch (err) {
     toast.error('Ошибка при запуске парсинга')
   }
 }
@@ -130,13 +145,13 @@ onMounted(() => {
             </div>
           </div>
           <a 
-            v-if="vacancy.url"
-            :href="vacancy.url" 
+            v-if="vacancy.source_url"
+            :href="vacancy.source_url" 
             target="_blank"
             class="btn-external"
           >
             <ExternalLink :size="18" />
-            На HeadHunter
+            На {{ sourceLabel }}
           </a>
         </div>
 
@@ -149,24 +164,24 @@ onMounted(() => {
               <div class="meta-value">{{ formatSalary(vacancy) }}</div>
             </div>
           </div>
-          <div v-if="vacancy.city" class="meta-item">
+          <div v-if="vacancy.area_name" class="meta-item">
             <MapPin :size="20" />
             <div>
               <div class="meta-label">Город</div>
-              <div class="meta-value">{{ vacancy.city }}</div>
+              <div class="meta-value">{{ vacancy.area_name }}</div>
             </div>
           </div>
-          <div v-if="vacancy.employment_type" class="meta-item">
+          <div v-if="vacancy.employment_type && vacancy.employment_type.length" class="meta-item">
             <Briefcase :size="20" />
             <div>
               <div class="meta-label">Тип занятости</div>
-              <div class="meta-value">{{ vacancy.employment_type }}</div>
+              <div class="meta-value">{{ Array.isArray(vacancy.employment_type) ? vacancy.employment_type.join(', ') : vacancy.employment_type }}</div>
             </div>
           </div>
-          <div v-if="vacancy.experience_level" class="meta-item">
+          <div v-if="vacancy.experience" class="meta-item">
             <div>
               <div class="meta-label">Опыт</div>
-              <div class="meta-value">{{ vacancy.experience_level }}</div>
+              <div class="meta-value">{{ vacancy.experience }}</div>
             </div>
           </div>
           <div class="meta-item">
@@ -217,10 +232,14 @@ onMounted(() => {
           <h4 class="sidebar-title">Информация</h4>
           <div class="sidebar-info">
             <div class="info-item">
-              <span class="info-label">ID вакансии</span>
-              <span class="info-value">{{ vacancy.hh_id }}</span>
+              <span class="info-label">Источник</span>
+              <span class="info-value">{{ sourceLabel }}</span>
             </div>
             <div class="info-item">
+              <span class="info-label">ID на источнике</span>
+              <span class="info-value">{{ vacancy.source_id }}</span>
+            </div>
+            <div v-if="vacancy.current_version" class="info-item">
               <span class="info-label">Версия</span>
               <span class="info-value">{{ vacancy.current_version }}</span>
             </div>
@@ -230,13 +249,9 @@ onMounted(() => {
                 {{ vacancy.is_active ? 'Активна' : 'Неактивна' }}
               </span>
             </div>
-            <div v-if="vacancy.employer_name" class="info-item">
+            <div v-if="vacancy.company_name" class="info-item">
               <span class="info-label">Работодатель</span>
-              <span class="info-value">{{ vacancy.employer_name }}</span>
-            </div>
-            <div v-if="vacancy.has_test" class="info-item">
-              <span class="info-label">Тестовое задание</span>
-              <span class="info-value">Есть</span>
+              <span class="info-value">{{ vacancy.company_name }}</span>
             </div>
           </div>
         </div>
@@ -280,7 +295,7 @@ onMounted(() => {
     <ConfirmDialog
       :show="showConfirmDialog"
       title="Обновить данные вакансии?"
-      message="Это запустит парсинг вакансии с HeadHunter и обновит данные в базе."
+      :message="`Это запустит парсинг вакансии с ${sourceLabel} и обновит данные в базе.`"
       confirm-text="Обновить"
       cancel-text="Отмена"
       @confirm="confirmParse"

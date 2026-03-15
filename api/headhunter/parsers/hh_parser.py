@@ -20,18 +20,24 @@ from ..models import Vacancy
 
 logger = logging.getLogger('modules.vacancies_parser.headhunter')
 
+
+def _format_duration(seconds: float) -> str:
+    """Форматирует длительность для логов только в секундах."""
+    return f"{seconds:.2f} сек"
+
+
 class HeadHunterParser:
     """Парсер для работы с API HeadHunter с ротацией User-Agent и jitter"""
 
     # Константы для rate limiting
     MAX_RETRIES = 3
-    BASE_DELAY = 1.0
-    MAX_DELAY = 60.0
+    BASE_DELAY = 0.75
+    MAX_DELAY = 45.0
     
     # Лимит API HeadHunter: 30 запросов в секунду
     API_RATE_LIMIT_PER_SECOND = 30
     MIN_DELAY_BETWEEN_REQUESTS = 1.0 / 30  # ≈ 0.033 сек
-    SAFE_MIN_DELAY = 0.04  # Безопасная минимальная задержка (25 запросов/сек вместо 30)
+    SAFE_MIN_DELAY = 0.03  # 3/4 от исходного 0.04; лимит API контролируется _enforce_rate_limit
 
     def __init__(self, metrics: Optional[ParsingMetrics] = None, use_jitter: bool = True,
                  rotate_user_agent: bool = True, use_proxy: bool = False,
@@ -194,7 +200,11 @@ class HeadHunterParser:
             oldest_request_time = min(self._request_times)
             wait_time = 1.0 - (current_time - oldest_request_time)
             if wait_time > 0:
-                logger.debug(f"Rate limit: достигнут лимит {self.API_RATE_LIMIT_PER_SECOND} запросов/сек, ожидание {wait_time:.3f} сек")
+                logger.debug(
+                    "Rate limit: достигнут лимит %d запросов/сек, ожидание %s",
+                    self.API_RATE_LIMIT_PER_SECOND,
+                    _format_duration(wait_time),
+                )
                 return max(wait_time, self.SAFE_MIN_DELAY)
         
         # Добавляем текущий запрос в список
@@ -257,7 +267,11 @@ class HeadHunterParser:
                     # Убеждаемся, что итоговая задержка не меньше безопасного минимума
                     delay = max(delay, self.SAFE_MIN_DELAY)
                     time.sleep(delay)
-                    logger.debug(f"Jitter delay: {delay:.2f}s (множитель: {adaptive_multiplier:.1f}x)")
+                    logger.debug(
+                        "Jitter delay: %s (множитель: %.1fx)",
+                        _format_duration(delay),
+                        adaptive_multiplier,
+                    )
 
                 # Получаем текущий прокси
                 current_proxy = self._get_current_proxy()
@@ -266,7 +280,7 @@ class HeadHunterParser:
 
                 # Используем сессию для переиспользования соединений
                 try:
-                    response = self.session.get(url, params=params, proxies=current_proxy, timeout=30)
+                    response = self.session.get(url, params=params, proxies=current_proxy, timeout=22.5)
                 except (requests.ConnectionError, requests.RequestException) as session_error:
                     # Если ошибка сессии, создаем новую сессию и повторяем попытку
                     error_msg = str(session_error).lower()
@@ -276,7 +290,7 @@ class HeadHunterParser:
                         self.session = requests.Session()
                         self.session.headers.update(self.headers)
                         # Повторяем запрос с новой сессией
-                        response = self.session.get(url, params=params, proxies=current_proxy, timeout=30)
+                        response = self.session.get(url, params=params, proxies=current_proxy, timeout=22.5)
                     else:
                         raise
 
@@ -286,8 +300,8 @@ class HeadHunterParser:
                     retry_after = int(response.headers.get('Retry-After', 60))
                     retry_after = min(retry_after, self.MAX_DELAY)
                     logger.warning(
-                        "Rate limit достигнут (попытка %d/%d), ожидание %d сек...",
-                        attempt + 1, max_retries, retry_after
+                        "Rate limit достигнут (попытка %d/%d), ожидание %s...",
+                        attempt + 1, max_retries, _format_duration(float(retry_after))
                     )
                     time.sleep(retry_after)
                     # При rate limit ротируем User-Agent и прокси
@@ -306,8 +320,13 @@ class HeadHunterParser:
                     
                     # Логируем только каждую 5-ю ошибку 403, чтобы не засорять логи
                     if self.blocking_tracker._403_count % 5 == 0 or self.blocking_tracker._403_count <= 3:
-                        logger.warning(f"Доступ запрещён (403) для {url}. Всего 403 ошибок: {self.blocking_tracker._403_count}. Пауза 2 сек...")
-                    time.sleep(2.0)
+                        logger.warning(
+                            "Доступ запрещён (403) для %s. Всего 403 ошибок: %d. Пауза %s...",
+                            url,
+                            self.blocking_tracker._403_count,
+                            _format_duration(2.0),
+                        )
+                    time.sleep(1.5)
 
                     # Ротируем User-Agent и прокси при 403
                     self._rotate_user_agent()
@@ -375,7 +394,7 @@ class HeadHunterParser:
             # Exponential backoff перед следующей попыткой
             if attempt < max_retries - 1:
                 delay = min(self.BASE_DELAY * (2 ** attempt), self.MAX_DELAY)
-                logger.debug("Ожидание %.1f сек перед повторной попыткой...", delay)
+                logger.debug("Ожидание %s перед повторной попыткой...", _format_duration(delay))
                 time.sleep(delay)
         
         # Все попытки исчерпаны

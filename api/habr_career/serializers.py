@@ -109,16 +109,3 @@ class ParsingTaskStatusSerializer(serializers.Serializer):
     result = serializers.DictField(allow_null=True)
     error = serializers.CharField(allow_null=True)
 
-
-class OAuthStatusSerializer(serializers.Serializer):
-    """Сериализатор для статуса OAuth-подключения"""
-
-    class Meta:
-        ref_name = 'HabrCareerOAuthStatus'
-
-    connected = serializers.BooleanField()
-    expired = serializers.BooleanField(allow_null=True)
-    has_refresh = serializers.BooleanField()
-    expires_at = serializers.DateTimeField(allow_null=True)
-    updated_at = serializers.DateTimeField(allow_null=True)
-

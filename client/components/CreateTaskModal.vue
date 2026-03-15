@@ -159,13 +159,16 @@ const defaultConfigs = {
     q: ''
   },
   superjob_api: {
-    max_pages: 10,
+    pages: 10,
     delay: 0.5,
-    keywords: ''
+    keyword: '',
+    town: '',
+    catalogues: ''
   },
   superjob_html: {
     max_pages: 10,
-    keywords: ''
+    keywords: '',
+    town: ''
   }
 }
 
@@ -208,8 +211,13 @@ const isFormValid = computed(() => {
     return config.max_pages > 0
   }
   
-  // SuperJob (API и HTML)
-  if (source === 'superjob') {
+  // SuperJob API
+  if (source === 'superjob' && mode === 'api') {
+    return config.pages > 0
+  }
+
+  // SuperJob HTML
+  if (source === 'superjob' && mode === 'html') {
     return config.max_pages > 0
   }
   
@@ -298,7 +306,21 @@ function validateQueryStep() {
     }
   }
 
-  if (source === 'habr_career' || source === 'superjob') {
+  if (source === 'habr_career') {
+    if (!config.max_pages || config.max_pages < 1) {
+      errors.value.max_pages = 'Укажите количество страниц'
+      return false
+    }
+  }
+
+  if (source === 'superjob' && parsing_mode === 'api') {
+    if (!config.pages || config.pages < 1) {
+      errors.value.pages = 'Укажите количество страниц'
+      return false
+    }
+  }
+
+  if (source === 'superjob' && parsing_mode === 'html') {
     if (!config.max_pages || config.max_pages < 1) {
       errors.value.max_pages = 'Укажите количество страниц'
       return false
