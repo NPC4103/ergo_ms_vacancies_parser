@@ -8,8 +8,11 @@ Celery задачи для парсинга вакансий.
 """
 
 import logging
+from datetime import timedelta
 from celery import shared_task, group, chord
 from typing import Dict, Any, List, Optional
+
+from django.utils import timezone
 
 from .models import ParsingTask, TaskItem
 from .scheduler import default_scheduler
