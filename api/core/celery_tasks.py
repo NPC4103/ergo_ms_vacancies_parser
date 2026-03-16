@@ -360,6 +360,14 @@ def parse_items_worker(self, task_id: int, worker_id: str):
                     consecutive_blocks = 0
                     metrics.record_item_processed(celery_task_id, success=True)
 
+                    try:
+                        if result.get('norm_created'):
+                            metrics.increment_counter(celery_task_id, 'saved', 1)
+                        elif result.get('norm_updated'):
+                            metrics.increment_counter(celery_task_id, 'updated', 1)
+                    except Exception:
+                        pass
+
                     logger.info(f"Worker {worker_id}: успешно обработан item {item.id} (vacancy_id={result['vacancy_id']}, created={result['created']})")
 
                 except Exception as e:

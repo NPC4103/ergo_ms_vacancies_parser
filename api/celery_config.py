@@ -105,6 +105,16 @@ class VacanciesParserCeleryConfig(VacanciesParserCeleryConfigBase):
                 'time_limit': 120,
                 'soft_time_limit': 110,
             },
+
+            # Задачи нормализации
+            'vacancies_parser.tasks.rebuild_normalized_vacancies_for_task': {
+                **default_limits['batch'],
+                'rate_limit': '10/h',
+            },
+            'vacancies_parser.tasks.run_deduplication_task': {
+                **default_limits['periodic'],
+                'rate_limit': default_rates['periodic'],
+            },
         })
         
         return annotations

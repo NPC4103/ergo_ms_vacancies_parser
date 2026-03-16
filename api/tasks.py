@@ -32,6 +32,12 @@ pause_task = core_tasks_module.pause_task
 resume_task = core_tasks_module.resume_task
 stop_task = core_tasks_module.stop_task
 
+# Задачи нормализации
+from .core.celery_tasks_normalization import (  # noqa: E402
+    rebuild_normalized_vacancies_for_task,
+    run_deduplication_task,
+)
+
 __all__ = [
     'create_parsing_task',
     'coordinate_parsing_task',
@@ -43,4 +49,6 @@ __all__ = [
     'pause_task',
     'resume_task',
     'stop_task',
+    'rebuild_normalized_vacancies_for_task',
+    'run_deduplication_task',
 ]

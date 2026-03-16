@@ -376,7 +376,7 @@ def process_item(item, parser, task, error_handler):
         defaults=mapped,
     )
 
-    normalized_vacancy, _, _ = _save_normalized_vacancy(
+    normalized_vacancy, norm_created, norm_updated = _save_normalized_vacancy(
         vacancy_data=vacancy_data,
         task=task,
         item=item,
@@ -392,6 +392,8 @@ def process_item(item, parser, task, error_handler):
         'success': True,
         'vacancy_id': vacancy.id,
         'created': created,
+        'norm_created': norm_created,
+        'norm_updated': norm_updated,
     }
 
 
