@@ -15,6 +15,10 @@ import requests
 from django.utils import timezone
 
 from .utils import RateLimiter, ParsingMetrics
+from modules.vacancies_parser.api.core.monitoring_utils import (
+    increment_taskrun_counter,
+    record_external_api_event,
+)
 
 logger = logging.getLogger('modules.vacancies_parser.superjob.parser')
 
@@ -90,6 +94,8 @@ class SuperJobParser:
 
                 if response.status_code == 429:
                     self.metrics.record_rate_limit()
+                    increment_taskrun_counter('http_429', 1)
+                    record_external_api_event(source='superjob', event_type='http_429', endpoint=url)
                     retry_after = int(response.headers.get('Retry-After', 60))
                     retry_after = min(retry_after, self.MAX_RETRY_DELAY)
                     logger.warning(
@@ -115,6 +121,8 @@ class SuperJobParser:
             except requests.Timeout as e:
                 last_error = e
                 self.metrics.record_request(success=False)
+                increment_taskrun_counter('timeouts', 1)
+                record_external_api_event(source='superjob', event_type='timeout', endpoint=url)
                 logger.warning(
                     "Timeout %s (попытка %d/%d)", url, attempt + 1, self.MAX_RETRIES
                 )
@@ -128,6 +136,7 @@ class SuperJobParser:
                 logger.warning("Ошибка запроса %s: %s", url, e)
 
             if attempt < self.MAX_RETRIES - 1:
+                increment_taskrun_counter('retries', 1)
                 delay = min(
                     self.BASE_RETRY_DELAY * (2 ** attempt) + random.uniform(0, 1),
                     self.MAX_RETRY_DELAY,

@@ -17,6 +17,10 @@ from django.utils import timezone
 
 from .utils import ProxyRotator, UserAgentRotator, RequestJitter, ParsingMetrics, IPBlockingTracker
 from ..models import Vacancy
+from modules.vacancies_parser.api.core.monitoring_utils import (
+    increment_taskrun_counter,
+    record_external_api_event,
+)
 
 logger = logging.getLogger('modules.vacancies_parser.headhunter')
 
@@ -297,6 +301,8 @@ class HeadHunterParser:
                 # Обработка rate limiting (429 Too Many Requests)
                 if response.status_code == 429:
                     self.metrics.record_rate_limit()
+                    increment_taskrun_counter('http_429', 1)
+                    record_external_api_event(source='headhunter', event_type='http_429', endpoint=url)
                     retry_after = int(response.headers.get('Retry-After', 60))
                     retry_after = min(retry_after, self.MAX_DELAY)
                     logger.warning(
@@ -345,6 +351,8 @@ class HeadHunterParser:
                 last_error = e
                 self.metrics.record_request(success=False)
                 self.metrics.record_error(f"Timeout для {url}")
+                increment_taskrun_counter('timeouts', 1)
+                record_external_api_event(source='headhunter', event_type='timeout', endpoint=url)
                 logger.warning("Timeout при запросе %s (попытка %d/%d)", url, attempt + 1, max_retries)
                 
             except (RequestsSSLError, ssl.SSLError) as e:
@@ -393,6 +401,7 @@ class HeadHunterParser:
             
             # Exponential backoff перед следующей попыткой
             if attempt < max_retries - 1:
+                increment_taskrun_counter('retries', 1)
                 delay = min(self.BASE_DELAY * (2 ** attempt), self.MAX_DELAY)
                 logger.debug("Ожидание %s перед повторной попыткой...", _format_duration(delay))
                 time.sleep(delay)

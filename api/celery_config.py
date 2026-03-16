@@ -87,6 +87,10 @@ class VacanciesParserCeleryConfig(VacanciesParserCeleryConfigBase):
                 **default_limits['periodic'],
                 'rate_limit': default_rates['periodic'],
             },
+            'vacancies_parser.tasks.cleanup_monitoring_retention': {
+                **default_limits['periodic'],
+                'rate_limit': None,
+            },
             
             # Управляющие задачи
             'vacancies_parser.tasks.pause_task': {

@@ -44,6 +44,16 @@ class VacanciesParserBeatConfig(CeleryBeatModuleConfig):
                     'priority': 5,
                 }
             },
+
+            # Retention очистка мониторинга - раз в сутки ночью
+            'vacancies_parser-cleanup-monitoring-retention': {
+                'task': 'vacancies_parser.tasks.cleanup_monitoring_retention',
+                'schedule': crontab(minute=30, hour=2),
+                'options': {
+                    'queue': 'vacancies_parser',
+                    'priority': 1,
+                }
+            },
         }
 
 

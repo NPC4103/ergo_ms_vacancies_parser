@@ -11,6 +11,10 @@ import requests
 from ..core.parsers import ParserFactory
 from ..core.parsers.base import BlockedError, NetworkError
 from ..core.parsers.html_parsers import HabrCareerHTMLParser
+from modules.vacancies_parser.api.core.monitoring_utils import (
+    increment_taskrun_counter,
+    record_external_api_event,
+)
 
 logger = logging.getLogger('celery.module.vacancies_parser.habr_career')
 
@@ -47,11 +51,16 @@ class HabrCareerModuleHTMLParser(HabrCareerHTMLParser):
                 raise
             except requests.Timeout as e:
                 last_error = e
+                increment_taskrun_counter('timeouts', 1)
+                record_external_api_event(source='habr_career', event_type='timeout', endpoint=url)
                 logger.warning(
                     "[Habr] Таймаут %s (попытка %s/%s)", url, attempt + 1, self.max_retries
                 )
             except requests.HTTPError as e:
                 last_error = e
+                if getattr(e.response, 'status_code', None) == 429:
+                    increment_taskrun_counter('http_429', 1)
+                    record_external_api_event(source='habr_career', event_type='http_429', endpoint=url)
                 logger.warning(
                     "[Habr] HTTP %s для %s (попытка %s/%s)",
                     e.response.status_code, url, attempt + 1, self.max_retries,
@@ -64,6 +73,7 @@ class HabrCareerModuleHTMLParser(HabrCareerHTMLParser):
                 )
 
             if attempt < self.max_retries - 1:
+                increment_taskrun_counter('retries', 1)
                 delay = min(2 ** attempt, 10) + random.uniform(0.5, 1.5)
                 time.sleep(delay)
 

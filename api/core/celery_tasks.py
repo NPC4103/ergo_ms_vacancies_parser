@@ -453,8 +453,20 @@ def monitor_tasks_progress():
     
     try:
         running_tasks = ParsingTask.objects.filter(status='running')
+        stuck_minutes = 20
+        try:
+            from django.conf import settings
+            stuck_minutes = int(getattr(settings, 'VACANCIES_PARSER_STUCK_MINUTES', stuck_minutes))
+        except Exception:
+            stuck_minutes = 20
+        now = timezone.now()
+        stuck_threshold = now - timedelta(minutes=stuck_minutes)
+        stuck_tasks = []
+        finalized_count = 0
         
         for task in running_tasks:
+            if task.updated_at and task.updated_at < stuck_threshold:
+                stuck_tasks.append(task)
             progress = default_scheduler.get_task_progress(task.id)
             
             logger.info(
@@ -469,16 +481,83 @@ def monitor_tasks_progress():
                 logger.info(f"Task {task.id} обнаружен как завершенный, запуск финализации")
                 try:
                     finalize_parsing_task.apply_async(args=[task.id])
+                    finalized_count += 1
                 except Exception as e:
                     logger.warning(f"Не удалось запустить финализацию задачи {task.id}: {e}")
                     logger.warning("Финализация будет выполнена при следующей проверке или вручную")
+
+        if stuck_tasks:
+            stuck_ids = [t.id for t in stuck_tasks]
+            logger.warning(
+                "Обнаружены потенциально зависшие задачи (running без обновлений > %d мин): %s",
+                stuck_minutes,
+                stuck_ids,
+            )
         
-        result = {'monitored_tasks': len(running_tasks)}
-        metrics.record_task_success(task_id, result, monitored_tasks=len(running_tasks))
+        result = {
+            'monitored_tasks': len(running_tasks),
+            'stuck_tasks': len(stuck_tasks),
+            'finalize_triggered': finalized_count,
+        }
+        metrics.record_task_success(
+            task_id,
+            result,
+            monitored_tasks=len(running_tasks),
+            stuck_tasks=len(stuck_tasks),
+            finalize_triggered=finalized_count,
+        )
+        # В TaskRun (DB) дополнительно подсветим stuck как errors (для обзора в админке)
+        try:
+            metrics.increment_counter(task_id, 'errors', len(stuck_tasks))
+        except Exception:
+            pass
         return len(running_tasks)
         
     except Exception as e:
         logger.error(f"Ошибка при мониторинге задач: {e}")
+        metrics.record_task_failure(task_id, e)
+        error_handler.handle_error(e, {'task_id': task_id})
+        return 0
+
+
+@shared_task(name='vacancies_parser.tasks.cleanup_monitoring_retention')
+def cleanup_monitoring_retention() -> int:
+    """
+    Периодическая очистка мониторинговых данных (retention).
+
+    Удаляет старые записи TaskRun и ExternalApiEvent, чтобы не раздувать БД.
+    """
+    from celery import current_task
+    task_id = current_task.request.id if current_task else 'unknown'
+    metrics = get_metrics_for_task('vacancies_parser.tasks.cleanup_monitoring_retention')
+    error_handler = get_error_handler_for_task('vacancies_parser.tasks.cleanup_monitoring_retention')
+
+    metrics.record_task_start(task_id, task_name='cleanup_monitoring_retention')
+
+    retention_days = 60
+    try:
+        from django.conf import settings
+        retention_days = int(getattr(settings, 'VACANCIES_PARSER_TASKRUN_RETENTION_DAYS', retention_days))
+    except Exception:
+        retention_days = 60
+
+    try:
+        from datetime import timedelta
+        from django.utils import timezone
+        from .monitoring_models import TaskRun, ExternalApiEvent
+
+        threshold = timezone.now() - timedelta(days=retention_days)
+        deleted_taskruns, _ = TaskRun.objects.filter(started_at__lt=threshold).delete()
+        deleted_events, _ = ExternalApiEvent.objects.filter(created_at__lt=threshold).delete()
+        result = {
+            'deleted_taskruns': deleted_taskruns,
+            'deleted_events': deleted_events,
+            'retention_days': retention_days,
+        }
+        metrics.record_task_success(task_id, result, **result)
+        return deleted_taskruns + deleted_events
+    except Exception as e:
+        logger.error("Ошибка очистки retention мониторинга: %s", e)
         metrics.record_task_failure(task_id, e)
         error_handler.handle_error(e, {'task_id': task_id})
         return 0

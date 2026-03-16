@@ -5,6 +5,8 @@
 дополнительные метрики для мониторинга задач Celery.
 """
 
+import hashlib
+import json
 import logging
 import time
 from typing import Dict, Any, Optional
@@ -41,6 +43,96 @@ class TaskMetrics:
         self._items_processed: Dict[str, int] = defaultdict(int)
         self._items_failed: Dict[str, int] = defaultdict(int)
         self._items_success: Dict[str, int] = defaultdict(int)
+
+    def _safe_kwargs_digest(self, kwargs: Dict[str, Any]) -> Optional[str]:
+        if not kwargs:
+            return None
+        try:
+            payload = json.dumps(kwargs, sort_keys=True, default=str, ensure_ascii=False)
+            return hashlib.sha256(payload.encode('utf-8')).hexdigest()
+        except Exception:
+            return None
+
+    def _db_enabled(self) -> bool:
+        """
+        DB-режим может быть недоступен во время миграций/инициализации.
+        В этом случае метрики остаются in-memory и в логах.
+        """
+        try:
+            from django.db import connection
+            return connection is not None
+        except Exception:
+            return False
+
+    def _db_upsert_taskrun_start(self, task_id: str, task_name: Optional[str], kwargs: Dict[str, Any]):
+        try:
+            if not self._db_enabled():
+                return
+            from django.utils import timezone
+            from .monitoring_models import TaskRun
+
+            TaskRun.objects.update_or_create(
+                celery_task_id=task_id,
+                defaults={
+                    'task_name': task_name or '',
+                    'source': self.source,
+                    'status': 'running',
+                    'started_at': timezone.now(),
+                    'kwargs_digest': self._safe_kwargs_digest(kwargs),
+                },
+            )
+        except Exception as e:
+            self.logger.debug("TaskRun start write failed: %s", e)
+
+    def _db_update_taskrun_finish(
+        self,
+        task_id: str,
+        status: str,
+        duration: Optional[float],
+        error_type: Optional[str] = None,
+        error_message: Optional[str] = None,
+    ):
+        try:
+            if not self._db_enabled():
+                return
+            from django.utils import timezone
+            from django.db.models import F
+            from .monitoring_models import TaskRun
+
+            update = {
+                'status': status,
+                'finished_at': timezone.now(),
+                'duration_sec': duration,
+                'error_type': error_type,
+                'error_message': error_message,
+            }
+            TaskRun.objects.filter(celery_task_id=task_id).update(**update)
+            # Дополнительно синхронизируем processed/errors из in-memory счётчиков
+            TaskRun.objects.filter(celery_task_id=task_id).update(
+                processed=F('processed') + self._items_processed.get(task_id, 0),
+                errors=F('errors') + self._items_failed.get(task_id, 0),
+            )
+        except Exception as e:
+            self.logger.debug("TaskRun finish write failed: %s", e)
+
+    def increment_counter(self, task_id: str, field: str, inc: int = 1):
+        """
+        Унифицированный инкремент счётчика в TaskRun (если доступно).
+        """
+        if inc <= 0:
+            return
+        try:
+            if not self._db_enabled():
+                return
+            from django.db.models import F
+            from .monitoring_models import TaskRun
+
+            allowed = {'processed', 'saved', 'updated', 'errors', 'timeouts', 'http_429', 'retries'}
+            if field not in allowed:
+                return
+            TaskRun.objects.filter(celery_task_id=task_id).update(**{field: F(field) + inc})
+        except Exception as e:
+            self.logger.debug("TaskRun counter increment failed: %s", e)
     
     def record_task_start(self, task_id: str, task_name: Optional[str] = None, **kwargs):
         """
@@ -59,6 +151,7 @@ class TaskMetrics:
         }
         
         self.logger.debug(f"Задача {task_id} начата: {task_name}")
+        self._db_upsert_taskrun_start(task_id, task_name, kwargs)
     
     def record_task_success(self, task_id: str, result: Optional[Any] = None, **kwargs):
         """
@@ -84,6 +177,7 @@ class TaskMetrics:
         })
         
         self.logger.info(f"Задача {task_id} завершена успешно за {duration:.2f} сек")
+        self._db_update_taskrun_finish(task_id, status='success', duration=duration)
         
         # Очистка
         del self._task_start_times[task_id]
@@ -113,6 +207,13 @@ class TaskMetrics:
         })
         
         self.logger.error(f"Задача {task_id} завершена с ошибкой за {duration:.2f} сек: {exception}")
+        self._db_update_taskrun_finish(
+            task_id,
+            status='failure',
+            duration=duration,
+            error_type=type(exception).__name__,
+            error_message=str(exception),
+        )
         
         # Очистка
         del self._task_start_times[task_id]
@@ -132,6 +233,12 @@ class TaskMetrics:
             self._items_failed[task_id] += 1
         
         self._items_processed[task_id] += 1
+        # В DB фиксируем только агрегаты — processed/errors
+        if success:
+            self.increment_counter(task_id, 'processed', 1)
+        else:
+            self.increment_counter(task_id, 'processed', 1)
+            self.increment_counter(task_id, 'errors', 1)
     
     def get_metrics(self, task_id: Optional[str] = None) -> Dict[str, Any]:
         """

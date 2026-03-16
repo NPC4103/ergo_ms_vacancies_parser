@@ -10,6 +10,7 @@ from .core.normalized_models import (
     VacancyChangeHistory,
     ParsingStatistics
 )
+from .core.monitoring_models import TaskRun, ExternalApiEvent
 
 __all__ = [
     'ParsingTask',
@@ -17,4 +18,6 @@ __all__ = [
     'NormalizedVacancy',
     'VacancyChangeHistory',
     'ParsingStatistics',
+    'TaskRun',
+    'ExternalApiEvent',
 ]

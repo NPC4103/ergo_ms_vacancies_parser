@@ -27,6 +27,7 @@ finalize_parsing_task = core_tasks_module.finalize_parsing_task
 parse_items_worker = core_tasks_module.parse_items_worker
 release_expired_leases = core_tasks_module.release_expired_leases
 monitor_tasks_progress = core_tasks_module.monitor_tasks_progress
+cleanup_monitoring_retention = core_tasks_module.cleanup_monitoring_retention
 pause_task = core_tasks_module.pause_task
 resume_task = core_tasks_module.resume_task
 stop_task = core_tasks_module.stop_task
@@ -38,6 +39,7 @@ __all__ = [
     'parse_items_worker',
     'release_expired_leases',
     'monitor_tasks_progress',
+    'cleanup_monitoring_retention',
     'pause_task',
     'resume_task',
     'stop_task',
