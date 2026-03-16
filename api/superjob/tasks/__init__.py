@@ -6,6 +6,7 @@ Celery задачи для парсинга SuperJob.
 
 from .base import (
     parse_superjob_vacancies_task,
+    parse_superjob_vacancies_chunk_task,
     parse_all_superjob_vacancies_task,
     get_superjob_vacancy_details_task,
     parse_superjob_vacancies_by_config_task,
@@ -20,6 +21,7 @@ from .status_checking import check_superjob_vacancies_status_task
 
 __all__ = [
     'parse_superjob_vacancies_task',
+    'parse_superjob_vacancies_chunk_task',
     'parse_all_superjob_vacancies_task',
     'get_superjob_vacancy_details_task',
     'parse_superjob_vacancies_by_config_task',

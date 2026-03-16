@@ -326,6 +326,8 @@ class SuperjobCeleryBeatConfig(CeleryBeatModuleConfig):
                 'kwargs': {
                     'max_pages_per_query': 1,
                     'delay': 1.0,
+                    'max_queries': 100,
+                    'use_aliases': True,
                 },
                 'options': {
                     'queue': 'superjob',
@@ -339,6 +341,8 @@ class SuperjobCeleryBeatConfig(CeleryBeatModuleConfig):
                 'kwargs': {
                     'max_pages_per_query': 1,
                     'delay': 1.0,
+                    'max_queries': 100,
+                    'use_aliases': True,
                 },
                 'options': {
                     'queue': 'superjob',
@@ -352,6 +356,8 @@ class SuperjobCeleryBeatConfig(CeleryBeatModuleConfig):
                 'kwargs': {
                     'max_pages_per_query': 1,
                     'delay': 1.0,
+                    'max_queries': 100,
+                    'use_aliases': True,
                 },
                 'options': {
                     'queue': 'superjob',
@@ -365,6 +371,8 @@ class SuperjobCeleryBeatConfig(CeleryBeatModuleConfig):
                 'kwargs': {
                     'max_pages_per_query': 1,
                     'delay': 1.0,
+                    'max_queries': 100,
+                    'use_aliases': True,
                 },
                 'options': {
                     'queue': 'superjob',
@@ -378,6 +386,8 @@ class SuperjobCeleryBeatConfig(CeleryBeatModuleConfig):
                 'kwargs': {
                     'max_pages_per_query': 1,
                     'delay': 1.0,
+                    'max_queries': 100,
+                    'use_aliases': True,
                 },
                 'options': {
                     'queue': 'superjob',

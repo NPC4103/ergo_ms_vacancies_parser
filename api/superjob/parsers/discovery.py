@@ -176,9 +176,11 @@ def parse_all_vacancies(
     delay: float = 1.0,
     api_key: str = None,
     use_competence_core: bool = True,
-    max_queries: Optional[int] = 50,
+    tech_limit: Optional[int] = None,
+    use_aliases: bool = True,
+    max_queries: Optional[int] = 400,
 ) -> Dict[str, Any]:
-    """Универсальный парсинг вакансий. Запросы из competence_core или fallback-список."""
+    """Универсальный парсинг вакансий. Запросы из competence_core (все технологии + алиасы) или fallback."""
     search_queries: List[str] = []
     if use_competence_core:
         try:
@@ -186,13 +188,17 @@ def parse_all_vacancies(
                 TechnologySearchGenerator,
             )
             generator = TechnologySearchGenerator()
-            generator.load_technologies(limit=max_queries or 50)
+            generator.load_technologies(limit=tech_limit, include_aliases=use_aliases)
             search_queries = generator.generate_search_queries(
-                use_aliases=False,
-                max_queries=max_queries or 80,
+                use_aliases=use_aliases,
+                max_queries=max_queries,
             )
             if search_queries:
-                logger.info("Запросы загружены из competence_core: %d", len(search_queries))
+                logger.info(
+                    "Запросы загружены из competence_core: %d (алиасы=%s)",
+                    len(search_queries),
+                    use_aliases,
+                )
         except Exception as e:
             logger.warning("Не удалось загрузить запросы из competence_core: %s, используем fallback", e)
     if not search_queries:
@@ -205,7 +211,28 @@ def parse_all_vacancies(
     }
 
     logger.info("Универсальный парсинг: %d запросов", len(search_queries))
+    return run_queries_list(
+        search_queries, max_pages_per_query, delay, api_key, total_results,
+    )
 
+
+def run_queries_list(
+    search_queries: List[str],
+    max_pages_per_query: int,
+    delay: float,
+    api_key: str,
+    total_results: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    """
+    Выполняет парсинг по списку текстовых запросов.
+    Используется и в последовательном режиме, и в chunk-задачах.
+    """
+    if total_results is None:
+        total_results = {
+            'total_queries': len(search_queries),
+            'total_vacancies': 0, 'total_saved': 0, 'total_updated': 0,
+            'total_errors': 0, 'queries_processed': 0, 'queries_failed': 0,
+        }
     for i, query in enumerate(search_queries, 1):
         try:
             logger.info("Запрос %d/%d: '%s'", i, len(search_queries), query)
@@ -221,8 +248,7 @@ def parse_all_vacancies(
             logger.error("Ошибка при обработке запроса '%s': %s", query, e)
             total_results['queries_failed'] += 1
             total_results['total_errors'] += 1
-
-    logger.info("Универсальный парсинг завершен: %s", total_results)
+    logger.info("Парсинг списка запросов завершен: %s", total_results)
     return total_results
 
 

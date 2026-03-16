@@ -77,7 +77,8 @@ class HabrCareerCeleryBeatConfig(CeleryBeatModuleConfig):
                     'pages_per_query': 2,
                     'delay': 1.2,
                     'get_details': False,
-                    'max_queries': 25,
+                    'max_queries': 80,
+                    'use_aliases': True,
                 },
                 'options': {
                     'queue': 'habr_career',
@@ -95,7 +96,8 @@ class HabrCareerCeleryBeatConfig(CeleryBeatModuleConfig):
                     'pages_per_query': 3,
                     'delay': 1.3,
                     'get_details': True,
-                    'max_queries': 30,
+                    'max_queries': 200,
+                    'use_aliases': True,
                 },
                 'options': {
                     'queue': 'habr_career',

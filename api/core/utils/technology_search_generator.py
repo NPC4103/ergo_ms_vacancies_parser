@@ -2,14 +2,38 @@
 Генератор поисковых запросов на основе технологий (competence_core).
 
 Используется HeadHunter, SuperJob и Habr Career для единого источника запросов.
+Опциональное кэширование результата (TTL из VACANCIES_PARSER_TECH_QUERIES_CACHE_TTL_SEC).
 """
 
+import hashlib
 import logging
-from typing import List, Dict, Optional
+import pickle
+from typing import List, Dict, Optional, Any
 
 from modules.competence_core.api.skill_map.models import Technology, TechnologyCategory
 
+from modules.vacancies_parser.api.core.parsing_config import get_tech_queries_cache_ttl_sec
+
 logger = logging.getLogger('modules.vacancies_parser.technologies')
+
+CACHE_KEY_PREFIX = 'vacancies_parser:tech_queries:'
+
+
+def _cache_key_parts(
+    load_params: Dict[str, Any],
+    use_aliases: bool,
+    max_queries: Optional[int],
+    combine_with_keywords: Optional[List[str]],
+    include_duplicate_aliases: bool,
+) -> str:
+    raw = (
+        tuple(sorted(load_params.items())) if load_params else (),
+        use_aliases,
+        max_queries,
+        tuple(combine_with_keywords) if combine_with_keywords else (),
+        include_duplicate_aliases,
+    )
+    return hashlib.sha256(pickle.dumps(raw)).hexdigest()
 
 
 class TechnologySearchGenerator:
@@ -21,6 +45,7 @@ class TechnologySearchGenerator:
     def __init__(self):
         self.technologies = []
         self.loaded = False
+        self._load_params: Dict[str, Any] = {}
 
     def load_technologies(
         self,
@@ -29,6 +54,12 @@ class TechnologySearchGenerator:
         include_aliases: bool = True,
         limit: Optional[int] = None,
     ) -> int:
+        self._load_params = {
+            'categories': tuple(categories) if categories else None,
+            'min_popularity': min_popularity,
+            'include_aliases': include_aliases,
+            'limit': limit,
+        }
         query = Technology.objects.all()
         if categories:
             query = query.filter(category__in=categories)
@@ -56,6 +87,23 @@ class TechnologySearchGenerator:
         combine_with_keywords: Optional[List[str]] = None,
         include_duplicate_aliases: bool = False,
     ) -> List[str]:
+        ttl = get_tech_queries_cache_ttl_sec()
+        if ttl > 0:
+            if not self.loaded:
+                self.load_technologies()
+            key = CACHE_KEY_PREFIX + _cache_key_parts(
+                self._load_params, use_aliases, max_queries,
+                combine_with_keywords, include_duplicate_aliases,
+            )
+            try:
+                from django.core.cache import cache
+                cached = cache.get(key)
+                if cached is not None:
+                    logger.debug('Кэш запросов технологий: попадание, ключ=%s', key[:32])
+                    return cached
+            except Exception as e:
+                logger.debug('Кэш запросов технологий недоступен: %s', e)
+
         if not self.loaded:
             self.load_technologies()
         queries = []
@@ -84,6 +132,13 @@ class TechnologySearchGenerator:
         if max_queries and len(unique_queries) > max_queries:
             unique_queries = unique_queries[:max_queries]
         logger.debug('Сгенерировано %d уникальных запросов', len(unique_queries))
+
+        if ttl > 0:
+            try:
+                from django.core.cache import cache
+                cache.set(key, unique_queries, timeout=ttl)
+            except Exception as e:
+                logger.debug('Не удалось записать кэш запросов: %s', e)
         return unique_queries
 
     def generate_by_category(

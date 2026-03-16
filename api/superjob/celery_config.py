@@ -40,9 +40,14 @@ class SuperjobCeleryConfig(VacanciesParserCeleryConfigBase):
                 'rate_limit': '3/h',
             },
             f'{prefix}.parse_all_superjob_vacancies_task': {
-                'time_limit': 7200,
-                'soft_time_limit': 6900,
+                'time_limit': 180,
+                'soft_time_limit': 120,
                 'rate_limit': '1/h',
+            },
+            f'{prefix}.parse_superjob_vacancies_chunk_task': {
+                'time_limit': 1800,
+                'soft_time_limit': 1500,
+                'rate_limit': None,
             },
             f'{prefix}.get_superjob_vacancy_details_task': {
                 'time_limit': 1800,
