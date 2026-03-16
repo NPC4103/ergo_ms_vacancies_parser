@@ -153,26 +153,50 @@ def parse_vacancies_by_text(
     }
 
 
+FALLBACK_SEARCH_QUERIES = [
+    'Python', 'JavaScript', 'Java', 'C++', 'C#', 'PHP', 'Go',
+    'React', 'Vue', 'Angular', 'Node.js', 'Django', 'Flask',
+    'DevOps', 'Docker', 'Kubernetes', 'AWS',
+    'Data Science', 'Machine Learning',
+    'Frontend', 'Backend', 'Full Stack',
+    'iOS', 'Android', 'Mobile',
+    'QA', 'Automation', 'Selenium',
+    'Project Manager', 'Product Manager', 'Scrum',
+    'UI/UX', 'Web Design',
+    'HR', 'Recruiter',
+    'Аналитик', 'Бухгалтер', 'Юрист',
+    'Менеджер по продажам', 'Маркетолог',
+    'Инженер', 'Механик', 'Электрик',
+    'Водитель', 'Логистика',
+]
+
+
 def parse_all_vacancies(
-    max_pages_per_query: int = 3, delay: float = 1.0, api_key: str = None
+    max_pages_per_query: int = 3,
+    delay: float = 1.0,
+    api_key: str = None,
+    use_competence_core: bool = True,
+    max_queries: Optional[int] = 50,
 ) -> Dict[str, Any]:
-    """Универсальный парсинг вакансий по набору популярных запросов."""
-    search_queries = [
-        'Python', 'JavaScript', 'Java', 'C++', 'C#', 'PHP', 'Go',
-        'React', 'Vue', 'Angular', 'Node.js', 'Django', 'Flask',
-        'DevOps', 'Docker', 'Kubernetes', 'AWS',
-        'Data Science', 'Machine Learning',
-        'Frontend', 'Backend', 'Full Stack',
-        'iOS', 'Android', 'Mobile',
-        'QA', 'Automation', 'Selenium',
-        'Project Manager', 'Product Manager', 'Scrum',
-        'UI/UX', 'Web Design',
-        'HR', 'Recruiter',
-        'Аналитик', 'Бухгалтер', 'Юрист',
-        'Менеджер по продажам', 'Маркетолог',
-        'Инженер', 'Механик', 'Электрик',
-        'Водитель', 'Логистика',
-    ]
+    """Универсальный парсинг вакансий. Запросы из competence_core или fallback-список."""
+    search_queries: List[str] = []
+    if use_competence_core:
+        try:
+            from modules.vacancies_parser.api.core.utils.technology_search_generator import (
+                TechnologySearchGenerator,
+            )
+            generator = TechnologySearchGenerator()
+            generator.load_technologies(limit=max_queries or 50)
+            search_queries = generator.generate_search_queries(
+                use_aliases=False,
+                max_queries=max_queries or 80,
+            )
+            if search_queries:
+                logger.info("Запросы загружены из competence_core: %d", len(search_queries))
+        except Exception as e:
+            logger.warning("Не удалось загрузить запросы из competence_core: %s, используем fallback", e)
+    if not search_queries:
+        search_queries = list(FALLBACK_SEARCH_QUERIES)
 
     total_results = {
         'total_queries': len(search_queries),

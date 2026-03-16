@@ -168,14 +168,11 @@ class ParserFactory:
         if key in cls._parsers:
             existing_class = cls._parsers[key]
             if existing_class == parser_class:
-                # Та же регистрация - пропускаем без логирования
                 return
-            else:
-                # Другой класс - предупреждение
-                logger.warning(
-                    f"Парсер {source}/{parsing_mode} уже зарегистрирован как "
-                    f"{existing_class.__name__}, перезаписываем на {parser_class.__name__}"
-                )
+            # Модули намеренно переопределяют базовые парсеры ядра — ожидаемое поведение
+            logger.debug(
+                f"Парсер {source}/{parsing_mode}: {existing_class.__name__} заменён на {parser_class.__name__}"
+            )
         
         cls._parsers[key] = parser_class
         logger.debug(f"Зарегистрирован парсер {source}/{parsing_mode}: {parser_class.__name__}")

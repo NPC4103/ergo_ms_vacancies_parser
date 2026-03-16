@@ -30,11 +30,12 @@ class HabrCareerCeleryBeatConfig(CeleryBeatModuleConfig):
     def get_beat_schedule(self) -> Dict[str, Dict[str, Any]]:
         return {
             # ============================================================
-            # ЕЖЕДНЕВНЫЙ НОЧНОЙ ПОЛНЫЙ ПРОГОН (аналог daily high-priority)
+            # ЕЖЕДНЕВНЫЙ НОЧНОЙ ПОЛНЫЙ ПРОГОН (после SuperJob 02:00)
+            # Первый ночной запуск дня: 02:30
             # ============================================================
             'hc-daily-full-scan': {
                 'task': 'modules.vacancies_parser.api.habr_career.tasks.parse_habr_all_vacancies_task',
-                'schedule': crontab(minute=20, hour=2),
+                'schedule': crontab(minute=30, hour=2),
                 'kwargs': {
                     'pages': 15,
                     'delay': 1.5,
@@ -44,6 +45,61 @@ class HabrCareerCeleryBeatConfig(CeleryBeatModuleConfig):
                 'options': {
                     'queue': 'habr_career',
                     'priority': 9,
+                    'expires': 6 * 60 * 60,
+                },
+            },
+
+            # ============================================================
+            # РАННИЙ УТРЕННИЙ ЗАПУСК (данные в течение дня после старта воркера)
+            # ============================================================
+            'hc-early-morning-pulse': {
+                'task': 'modules.vacancies_parser.api.habr_career.tasks.parse_habr_vacancies_task',
+                'schedule': crontab(minute=10, hour=8),
+                'kwargs': {
+                    'pages': 4,
+                    'delay': 1.2,
+                    'get_details': True,
+                    'search_text': 'Python',
+                },
+                'options': {
+                    'queue': 'habr_career',
+                    'priority': 8,
+                    'expires': 2 * 60 * 60,
+                },
+            },
+            # ============================================================
+            # ПО ТЕХНОЛОГИЯМ ИЗ COMPETENCE_CORE (рабочие дни)
+            # ============================================================
+            'hc-by-technologies-workdays': {
+                'task': 'modules.vacancies_parser.api.habr_career.tasks.parse_habr_vacancies_by_technologies_task',
+                'schedule': crontab(minute=40, hour=9, day_of_week='1-5'),
+                'kwargs': {
+                    'pages_per_query': 2,
+                    'delay': 1.2,
+                    'get_details': False,
+                    'max_queries': 25,
+                },
+                'options': {
+                    'queue': 'habr_career',
+                    'priority': 7,
+                    'expires': 4 * 60 * 60,
+                },
+            },
+            # ============================================================
+            # ПО ТЕХНОЛОГИЯМ ИЗ COMPETENCE_CORE (ежедневно вечером)
+            # ============================================================
+            'hc-by-technologies-daily': {
+                'task': 'modules.vacancies_parser.api.habr_career.tasks.parse_habr_vacancies_by_technologies_task',
+                'schedule': crontab(minute=40, hour=20),
+                'kwargs': {
+                    'pages_per_query': 3,
+                    'delay': 1.3,
+                    'get_details': True,
+                    'max_queries': 30,
+                },
+                'options': {
+                    'queue': 'habr_career',
+                    'priority': 6,
                     'expires': 6 * 60 * 60,
                 },
             },
@@ -215,11 +271,11 @@ class HabrCareerCeleryBeatConfig(CeleryBeatModuleConfig):
             },
 
             # ============================================================
-            # НОЧНОЙ DEEP SCAN
+            # НОЧНОЙ DEEP SCAN (после SuperJob 03:15)
             # ============================================================
             'hc-nightly-deep-scan': {
                 'task': 'modules.vacancies_parser.api.habr_career.tasks.parse_habr_all_vacancies_task',
-                'schedule': crontab(minute=20, hour=3),
+                'schedule': crontab(minute=35, hour=3),
                 'kwargs': {
                     'pages': 10,
                     'delay': 2.0,

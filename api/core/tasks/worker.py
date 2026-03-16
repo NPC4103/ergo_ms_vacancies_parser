@@ -250,7 +250,10 @@ def _map_to_normalized_fields(vacancy_data: dict, task, item, model) -> dict:
         mapped[key] = value
 
     mapped['source'] = task.source
-    mapped['source_id'] = str(vacancy_data.get('source_id') or item.source_item_id or '')
+    raw_source_id = str(vacancy_data.get('source_id') or item.source_item_id or '')
+    if not raw_source_id.strip():
+        raw_source_id = f'item_{item.id}'
+    mapped['source_id'] = raw_source_id
     mapped['source_url'] = vacancy_data.get('source_url') or item.url or ''
     mapped['parsing_mode'] = task.parsing_mode
     mapped['task_item'] = item

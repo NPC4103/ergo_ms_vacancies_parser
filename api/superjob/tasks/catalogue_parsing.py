@@ -8,6 +8,7 @@
 """
 
 import logging
+import os
 from typing import Dict, List, Any
 
 from celery import shared_task, chord
@@ -40,6 +41,7 @@ def parse_superjob_by_catalogues_task(
     api_key: str = None,
 ) -> Dict[str, Any]:
     """Последовательный парсинг вакансий SuperJob по каталогам."""
+    api_key = api_key or os.environ.get('SUPERJOB_API_KEY')
 
     def body():
         mode = f"{len(catalogue_ids)} выбранных" if catalogue_ids else "всех"
@@ -88,6 +90,7 @@ def parse_superjob_single_catalogue_task(
     api_key: str = None,
 ) -> Dict[str, Any]:
     """Подзадача: парсинг одного каталога (для chord)."""
+    api_key = api_key or os.environ.get('SUPERJOB_API_KEY')
 
     def body():
         logger.info("Парсинг каталога '%s' (id=%d)", catalogue_title, catalogue_id)
@@ -161,6 +164,7 @@ def parse_superjob_catalogues_chord_task(
     api_key: str = None,
 ) -> Dict[str, Any]:
     """Параллельный парсинг каталогов через Celery chord."""
+    api_key = api_key or os.environ.get('SUPERJOB_API_KEY')
     task_id = self.request.id
     metrics = get_superjob_metrics()
     metrics.record_task_start(task_id, task_name=self.name)

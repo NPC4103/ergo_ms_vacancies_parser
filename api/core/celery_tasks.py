@@ -91,7 +91,17 @@ def create_parsing_task(
                 created_by = User.objects.get(id=created_by_id)
             except User.DoesNotExist:
                 logger.warning(f"Пользователь {created_by_id} не найден")
-        
+
+        config_hash = ParsingTask.get_config_hash(source, parsing_mode, config)
+        existing = ParsingTask.objects.filter(
+            source=source,
+            config_hash=config_hash
+        ).exclude(status__in=['completed', 'failed', 'stopped']).first()
+        if existing:
+            logger.info(f"Задача с такой конфигурацией уже существует: {existing.id}, возврат id")
+            metrics.record_task_success(task_id, existing.id)
+            return existing.id
+
         task = ParsingTask.objects.create(
             source=source,
             parsing_mode=parsing_mode,

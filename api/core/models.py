@@ -311,8 +311,13 @@ class ParsingTask(models.Model):
     
     def generate_config_hash(self) -> str:
         """Генерация хэша конфигурации для дедупликации"""
-        config_str = json.dumps(self.config, sort_keys=True)
-        hash_input = f"{self.source}:{self.parsing_mode}:{config_str}"
+        return self.get_config_hash(self.source, self.parsing_mode, self.config)
+
+    @staticmethod
+    def get_config_hash(source: str, parsing_mode: str, config: dict) -> str:
+        """Генерация хэша конфигурации без экземпляра (для проверки дубликатов)."""
+        config_str = json.dumps(config, sort_keys=True)
+        hash_input = f"{source}:{parsing_mode}:{config_str}"
         return hashlib.sha256(hash_input.encode()).hexdigest()
     
     def save(self, *args, **kwargs):
@@ -618,6 +623,7 @@ class TaskItem(models.Model):
                 item.last_error = f"Превышено максимальное количество попыток ({item.max_attempts})"
                 item.worker_id = None
                 item.save(update_fields=['status', 'last_error', 'worker_id', 'updated_at'])
+                item.task.increment_failed()
             else:
                 # Вернуть в pending для повтора
                 item.status = 'pending'

@@ -40,10 +40,11 @@ class SuperjobCeleryBeatConfig(CeleryBeatModuleConfig):
             # ============================================================
             # ЕЖЕДНЕВНЫЙ ПАРСИНГ IT-КАТАЛОГА (высший приоритет)
             # Полный обход каталога 33 (IT) — основной источник вакансий
+            # Первый ночной запуск дня: 02:00 (разведён с Habr 02:30)
             # ============================================================
             'sj-daily-it-catalogue': {
                 'task': 'modules.vacancies_parser.api.superjob.tasks.parse_superjob_by_catalogues_task',
-                'schedule': crontab(minute=15, hour=2),
+                'schedule': crontab(minute=0, hour=2),
                 'kwargs': {
                     'catalogue_ids': [IT_CATALOGUE_ID],
                     'max_pages_per_catalogue': 500,
@@ -57,11 +58,11 @@ class SuperjobCeleryBeatConfig(CeleryBeatModuleConfig):
             },
 
             # ============================================================
-            # МЕСЯЧНЫЙ ГЛУБОКИЙ ПАРСИНГ (monthly, 1-е число 01:15)
+            # МЕСЯЧНЫЙ ГЛУБОКИЙ ПАРСИНГ (monthly, 1-е число 01:00)
             # ============================================================
             'sj-monthly-deep-scan': {
                 'task': 'modules.vacancies_parser.api.superjob.tasks.parse_superjob_by_catalogues_task',
-                'schedule': crontab(minute=15, hour=1, day_of_month='1'),
+                'schedule': crontab(minute=0, hour=1, day_of_month='1'),
                 'kwargs': {
                     'catalogue_ids': [IT_CATALOGUE_ID],
                     'max_pages_per_catalogue': 500,
@@ -227,6 +228,24 @@ class SuperjobCeleryBeatConfig(CeleryBeatModuleConfig):
                     'queue': 'superjob',
                     'priority': 5,
                     'expires': 6 * 60 * 60,
+                }
+            },
+
+            # ============================================================
+            # РАННИЙ УТРЕННИЙ ЗАПУСК (чтобы данные были в течение дня после старта воркера)
+            # ============================================================
+            'sj-early-morning-pulse': {
+                'task': 'modules.vacancies_parser.api.superjob.tasks.parse_superjob_vacancies_task',
+                'schedule': crontab(minute=0, hour=8),
+                'kwargs': {
+                    'text': 'Python',
+                    'max_pages': 10,
+                    'delay': 1.2,
+                },
+                'options': {
+                    'queue': 'superjob',
+                    'priority': 8,
+                    'expires': 2 * 60 * 60,
                 }
             },
 

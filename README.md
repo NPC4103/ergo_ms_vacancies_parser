@@ -575,6 +575,7 @@ created → running → (paused | stopped | completed | failed)
 
 ## Дополнительные материалы
 
+- [DOCUMENTATION.md](DOCUMENTATION.md) — описание модуля, алгоритм парсинга, нормализованный вид и схемы процессов
 - [MODELS_DOCUMENTATION.md](MODELS_DOCUMENTATION.md) - Детальная документация по моделям данных
 
 ---
