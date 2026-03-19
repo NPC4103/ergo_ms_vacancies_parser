@@ -1,430 +1,260 @@
+<template>
+  <div class="vp-page p-4">
+    <div class="vp-cc-header d-flex flex-column flex-lg-row align-items-lg-center justify-content-between gap-2 mb-3">
+      <div class="d-flex align-items-center gap-2">
+        <div class="vp-cc-title-icon d-flex align-items-center justify-content-center">
+          <LayoutDashboard :size="22" :stroke-width="1.7" />
+        </div>
+        <div>
+          <h2 class="mb-1 d-flex align-items-center gap-2">
+            Дашборд
+            <span class="badge vp-pill-badge vp-pill-badge-accent">Задачи: {{ tasks.length }}</span>
+          </h2>
+          <div class="text-muted small">Обзор задач парсинга и расписание</div>
+        </div>
+      </div>
+      <div class="d-flex gap-2">
+        <button class="btn btn-outline-secondary btn-sm d-flex align-items-center gap-1" @click="loadData">
+          <RefreshCw :size="14" :class="{ 'vp-spinner': loading }" />
+          Обновить
+        </button>
+        <RouterLink :to="{ name: 'VacanciesParser' }" class="btn btn-primary btn-sm d-flex align-items-center gap-1">
+          <Plus :size="14" />
+          Новая задача
+        </RouterLink>
+      </div>
+    </div>
+
+    <!-- Статистика -->
+    <div class="row g-3 mb-4">
+      <div class="col-6 col-lg-3" v-for="stat in stats" :key="stat.key">
+        <div class="card shadow-sm border-0 h-100 vp-kpi-card" :class="stat.kpiVariant">
+          <div class="d-flex align-items-center gap-3">
+            <div class="vp-stat-icon" :class="stat.iconBg">
+              <component :is="stat.icon" :size="20" :class="stat.iconColor" />
+            </div>
+            <div>
+              <div class="vp-stat-value">{{ stat.value }}</div>
+              <div class="vp-stat-label">{{ stat.label }}</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="row g-4">
+      <!-- Активные задачи -->
+      <div class="col-lg-5">
+        <div class="vp-card p-0 h-100">
+          <div class="d-flex align-items-center justify-content-between px-3 py-2 border-bottom">
+            <h6 class="mb-0 fw-semibold d-flex align-items-center gap-2">
+              <Activity :size="16" class="text-primary" />
+              Активные задачи
+              <span class="badge bg-primary rounded-pill">{{ activeTasks.length }}</span>
+            </h6>
+            <RouterLink :to="{ name: 'VacanciesParser' }" class="text-secondary" style="font-size:0.8125rem;">
+              Все задачи
+            </RouterLink>
+          </div>
+          <div v-if="activeTasks.length === 0" class="vp-empty-state py-4">
+            <div class="vp-empty-icon">
+              <CheckCircle2 :size="24" />
+            </div>
+            <h5 style="font-size:0.9375rem;">Нет активных задач</h5>
+            <p style="font-size:0.8125rem;">Все задачи выполнены</p>
+          </div>
+          <ul class="list-group list-group-flush" v-else>
+            <li
+              v-for="task in activeTasks"
+              :key="task.id"
+              class="list-group-item px-3 py-2"
+            >
+              <div class="d-flex align-items-center justify-content-between mb-1">
+                <div class="d-flex align-items-center gap-2 min-w-0">
+                  <span class="badge vp-pill-badge vp-pill-badge-source" style="flex-shrink:0;">
+                    {{ sourceLabel(task.source) }}
+                  </span>
+                  <span class="text-truncate fw-medium" style="font-size:0.875rem;">{{ task.name }}</span>
+                </div>
+                <span class="badge vp-pill-badge flex-shrink-0" :class="statusPillClass(task.status)">
+                  {{ task.status_display || task.status }}
+                </span>
+              </div>
+              <TaskProgressBar
+                :completed="task.progress?.completed_items || 0"
+                :total="task.progress?.total_items || 0"
+                :failed="task.progress?.failed_items || 0"
+                :status="task.status"
+                :show-counts="true"
+                label=""
+              />
+            </li>
+          </ul>
+        </div>
+      </div>
+
+      <!-- Последние задачи -->
+      <div class="col-lg-7">
+        <div class="vp-card p-0">
+          <div class="d-flex align-items-center justify-content-between px-3 py-2 border-bottom">
+            <h6 class="mb-0 fw-semibold d-flex align-items-center gap-2">
+              <ClipboardList :size="16" class="text-secondary" />
+              Последние задачи
+            </h6>
+          </div>
+          <div class="vp-table-responsive">
+            <table class="table table-sm table-hover mb-0 align-middle vp-table">
+              <thead>
+                <tr>
+                  <th class="text-secondary fw-medium" style="font-size:0.8rem;">Задача</th>
+                  <th class="text-secondary fw-medium" style="font-size:0.8rem;">Источник</th>
+                  <th class="text-secondary fw-medium" style="font-size:0.8rem;">Статус</th>
+                  <th class="text-secondary fw-medium" style="font-size:0.8rem;">Дата</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-if="recentTasks.length === 0">
+                  <td colspan="4" class="text-center text-secondary py-4" style="font-size:0.875rem;">Нет задач</td>
+                </tr>
+                <tr
+                  v-for="task in recentTasks"
+                  :key="task.id"
+                  class="cursor-pointer"
+                  @click="$router.push({ name: 'VacanciesParserTaskDetail', params: { id: task.id } })"
+                >
+                  <td>
+                    <span class="fw-medium" style="font-size:0.875rem;">{{ task.name }}</span>
+                  </td>
+                  <td>
+                    <span class="vp-source-badge" :class="`source-${task.source}`">
+                      {{ sourceLabel(task.source) }}
+                    </span>
+                  </td>
+                  <td>
+                    <span class="badge vp-pill-badge" :class="statusPillClass(task.status)">{{ task.status_display || task.status }}</span>
+                  </td>
+                  <td class="text-secondary" style="font-size:0.8125rem;">{{ formatDate(task.created_at) }}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Расписание Celery Beat -->
+        <div class="vp-card p-0 mt-4">
+          <div class="d-flex align-items-center justify-content-between px-3 py-2 border-bottom">
+            <h6 class="mb-0 fw-semibold d-flex align-items-center gap-2">
+              <CalendarDays :size="16" class="text-secondary" />
+              Расписание Celery Beat
+              <span class="badge bg-secondary bg-opacity-15 text-body rounded-pill">{{ scheduleItems.length }}</span>
+            </h6>
+            <button
+              class="btn btn-link btn-sm p-0 text-secondary text-decoration-none"
+              @click="showSchedule = !showSchedule"
+              style="font-size:0.8125rem;"
+            >
+              {{ showSchedule ? 'Свернуть' : 'Развернуть' }}
+            </button>
+          </div>
+          <div v-if="showSchedule" class="vp-table-responsive" style="max-height: 320px; overflow-y: auto;">
+            <table class="table table-sm mb-0 align-middle vp-table">
+              <thead class="sticky-top bg-body">
+                <tr>
+                  <th class="text-secondary fw-medium" style="font-size:0.8rem;">Задача</th>
+                  <th class="text-secondary fw-medium" style="font-size:0.8rem;">Очередь</th>
+                  <th class="text-secondary fw-medium" style="font-size:0.8rem;">Расписание</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="item in scheduleItems" :key="item.id">
+                  <td>
+                    <div class="fw-medium" style="font-size:0.8125rem;">{{ item.title }}</div>
+                    <div class="text-secondary" style="font-size:0.75rem;">{{ item.description }}</div>
+                  </td>
+                  <td>
+                    <span class="badge" :class="`bg-${item.queueVariant} bg-opacity-15 text-${item.queueVariant}`">
+                      {{ item.queueLabel }}
+                    </span>
+                  </td>
+                  <td class="text-secondary" style="font-size:0.8125rem; white-space: nowrap;">{{ item.frequency }}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</template>
+
 <script setup>
-import { ref, onMounted, computed, onUnmounted } from 'vue'
-import { 
-  Briefcase, TrendingUp, MapPin, DollarSign, Clock, RefreshCw, Activity,
-  Play, CheckCircle, XCircle, Loader, AlertTriangle, Plus, List, BarChart3,
-  Calendar, Info
-} from 'lucide-vue-next'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { useParsingTasks } from '../composables/useParsingTasks'
-import { useToast } from 'vue-toastification'
+import {
+  LayoutDashboard, RefreshCw, Plus, Activity, CheckCircle2,
+  ClipboardList, CalendarDays, ListChecks, AlertCircle, Loader, CheckCheck
+} from 'lucide-vue-next'
+import { tasksApi } from '../js/api'
+import { scheduleItems } from './scheduleData'
 import TaskProgressBar from '../components/TaskProgressBar.vue'
 
 const router = useRouter()
-const toast = useToast()
-
-const {
-  tasks,
-  loading: tasksLoading,
-  loadTasks,
-  activeTasks,
-  finishedTasks
-} = useParsingTasks()
-
-const stats = ref(null)
+const tasks = ref([])
 const loading = ref(false)
-let refreshInterval = null
+const showSchedule = ref(false)
+let refreshTimer = null
 
-import { scheduleItems } from './scheduleData'
+const activeTasks = computed(() => tasks.value.filter(t => t.is_active))
+const recentTasks = computed(() => [...tasks.value].sort((a, b) => new Date(b.created_at) - new Date(a.created_at)).slice(0, 10))
 
-// Статистика по задачам
-const tasksStats = computed(() => {
-  const tasksList = tasks.value || []
-  const all = tasksList.length
-  const running = tasksList.filter(t => t.status === 'running').length
-  const completed = tasksList.filter(t => t.status === 'completed').length
-  const failed = tasksList.filter(t => t.status === 'failed').length
-  const paused = tasksList.filter(t => t.status === 'paused').length
-  
-  return {
-    total: all,
-    running,
-    completed,
-    failed,
-    paused,
-    success_rate: all > 0 ? Math.round((completed / all) * 100) : 0
+const stats = computed(() => [
+  { key: 'total',     value: tasks.value.length,                                       label: 'Всего задач',   icon: ListChecks,  iconBg: 'bg-primary bg-opacity-10', iconColor: 'text-primary', kpiVariant: 'vp-kpi-accent-primary' },
+  { key: 'active',    value: activeTasks.value.length,                                 label: 'Активных',      icon: Activity,    iconBg: 'bg-info bg-opacity-10',    iconColor: 'text-info',    kpiVariant: 'vp-kpi-accent-info' },
+  { key: 'completed', value: tasks.value.filter(t => t.status === 'completed').length, label: 'Завершённых',   icon: CheckCheck,  iconBg: 'bg-success bg-opacity-10', iconColor: 'text-success', kpiVariant: 'vp-kpi-accent-success' },
+  { key: 'failed',    value: tasks.value.filter(t => t.status === 'failed').length,    label: 'С ошибками',    icon: AlertCircle, iconBg: 'bg-danger bg-opacity-10',  iconColor: 'text-danger',  kpiVariant: 'vp-kpi-accent-danger' }
+])
+
+const sourceNames = { headhunter: 'HH', superjob: 'SJ', habr_career: 'Habr' }
+function sourceLabel(src) { return sourceNames[src] || src }
+function formatDate(dateStr) {
+  if (!dateStr) return '—'
+  return new Date(dateStr).toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' })
+}
+
+function statusPillClass(status) {
+  const map = {
+    running: 'vp-pill-badge-info',
+    completed: 'vp-pill-badge-success',
+    failed: 'vp-pill-badge-danger',
+    paused: 'vp-pill-badge-warning',
+    stopped: 'vp-pill-badge-neutral',
+    pending: 'vp-pill-badge-neutral'
   }
-})
+  return map[status] || 'vp-pill-badge-neutral'
+}
 
-// Последние активные задачи
-const recentActiveTasks = computed(() => {
-  const tasksList = tasks.value || []
-  return tasksList
-    .filter(t => t.is_active)
-    .sort((a, b) => new Date(b.started_at || b.created_at) - new Date(a.started_at || a.created_at))
-    .slice(0, 5)
-})
-
-// Последние завершенные задачи
-const recentFinishedTasks = computed(() => {
-  const tasksList = tasks.value || []
-  return tasksList
-    .filter(t => t.is_finished)
-    .sort((a, b) => new Date(b.completed_at || b.updated_at) - new Date(a.completed_at || a.updated_at))
-    .slice(0, 5)
-})
-
-const loadDashboardData = async () => {
+async function loadData() {
   loading.value = true
   try {
-    // Загружаем задачи
-    await loadTasks({ page_size: 50 })
-    
-    // Загружаем статистику вакансий (если нужно)
-    // stats.value = await loadStats()
-  } catch (error) {
-    console.error('Ошибка загрузки данных дашборда:', error)
-    toast.error('Ошибка загрузки данных дашборда')
+    const response = await tasksApi.list({ page_size: 50 })
+    const data = response.data
+    tasks.value = Array.isArray(data?.results) ? data.results : (Array.isArray(data) ? data : [])
+  } catch (e) {
+    // Silent refresh
   } finally {
     loading.value = false
   }
 }
 
-const statCards = computed(() => {
-  const s = tasksStats.value
-
-  return [
-    {
-      title: 'Всего задач',
-      value: s.total,
-      icon: List,
-      link: { name: 'VacanciesParser' },
-      subtitle: `${s.completed} завершено`
-    },
-    {
-      title: 'Активных задач',
-      value: s.running,
-      icon: Activity,
-      link: { name: 'VacanciesParser', query: { status: 'running' } },
-      subtitle: `${s.paused} приостановлено`
-    },
-    {
-      title: 'Успешных',
-      value: s.completed,
-      icon: CheckCircle,
-      link: { name: 'VacanciesParser', query: { status: 'completed' } },
-      subtitle: `${s.success_rate}% успешность`
-    },
-    {
-      title: 'С ошибками',
-      value: s.failed,
-      icon: XCircle,
-      link: { name: 'VacanciesParser', query: { status: 'failed' } },
-      subtitle: s.failed > 0 ? 'Требуют внимания' : 'Все в порядке'
-    }
-  ]
-})
-
-function formatDate(dateString) {
-  if (!dateString) return '-'
-  const date = new Date(dateString)
-  return date.toLocaleString('ru-RU', {
-    day: '2-digit',
-    month: '2-digit',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit'
-  })
-}
-
-function formatRelativeTime(dateString) {
-  if (!dateString) return '-'
-  const date = new Date(dateString)
-  const now = new Date()
-  const diffMs = now - date
-  const diffMins = Math.floor(diffMs / 60000)
-  const diffHours = Math.floor(diffMins / 60)
-  const diffDays = Math.floor(diffHours / 24)
-  
-  if (diffMins < 1) return 'только что'
-  if (diffMins < 60) return `${diffMins} мин назад`
-  if (diffHours < 24) return `${diffHours} ч назад`
-  if (diffDays < 7) return `${diffDays} д назад`
-  
-  return formatDate(dateString)
-}
-
-function getStatusBadgeClass(status) {
-  const classes = {
-    'created': 'vp-badge-secondary',
-    'running': 'vp-badge-primary',
-    'paused': 'vp-badge-warning',
-    'stopped': 'vp-badge-secondary',
-    'completed': 'vp-badge-success',
-    'failed': 'vp-badge-danger'
-  }
-  return classes[status] || 'vp-badge-secondary'
-}
-
-function getSourceBadgeClass(source) {
-  const classes = {
-    'headhunter': 'vp-badge-danger',
-    'habr_career': 'vp-badge-info',
-    'superjob': 'vp-badge-success'
-  }
-  return classes[source] || 'vp-badge-secondary'
-}
-
-function navigateToTask(taskId) {
-  router.push(`/vacancies-parser/tasks/${taskId}`)
-}
-
-function createTask() {
-  router.push({ name: 'VacanciesParser' })
-}
-
 onMounted(() => {
-  loadDashboardData()
-  
-  // Auto-refresh для активных задач (каждые 10 секунд)
-  refreshInterval = setInterval(() => {
-    if (recentActiveTasks.value.length > 0 && !loading.value) {
-      loadDashboardData()
-    }
-  }, 10000)
+  loadData()
+  refreshTimer = setInterval(loadData, 10000)
 })
-
-onUnmounted(() => {
-  if (refreshInterval) {
-    clearInterval(refreshInterval)
-  }
-})
+onUnmounted(() => clearInterval(refreshTimer))
 </script>
 
-<template>
-  <div class="vp-dashboard">
-    <div class="vp-dashboard-header">
-      <div>
-        <h2 class="vp-dashboard-title">Панель управления парсингом</h2>
-        <p class="vp-dashboard-subtitle">Мониторинг и управление задачами парсинга вакансий</p>
-      </div>
-      <div class="vp-dashboard-actions">
-        <button 
-          @click="createTask" 
-          class="vp-btn-create"
-        >
-          <Plus :size="18" />
-          Создать задачу
-        </button>
-        <button 
-          @click="loadDashboardData" 
-          class="vp-btn-refresh"
-          :disabled="loading"
-          :class="{ 'vp-loading': loading }"
-        >
-          <RefreshCw :size="18" />
-        </button>
-      </div>
-    </div>
-
-    <!-- Статистические карточки -->
-    <div class="vp-stats-grid">
-      <div 
-        v-for="card in statCards" 
-        :key="card.title"
-        class="vp-stat-card"
-        @click="card.link && router.push(card.link)"
-      >
-        <div class="vp-stat-icon">
-          <component :is="card.icon" :size="24" />
-        </div>
-        <div class="vp-stat-content">
-          <div class="vp-stat-label">{{ card.title }}</div>
-          <div class="vp-stat-value">{{ card.value }}</div>
-          <div v-if="card.subtitle" class="vp-stat-subtitle">{{ card.subtitle }}</div>
-        </div>
-      </div>
-    </div>
-
-    <!-- Активные задачи -->
-    <div v-if="recentActiveTasks.length > 0" class="vp-section">
-      <div class="vp-section-header">
-        <div class="vp-section-title-group">
-          <Loader :size="20" class="vp-text-primary" />
-          <h3>Активные задачи</h3>
-          <span class="vp-badge vp-badge-primary vp-badge-rounded">{{ recentActiveTasks.length }}</span>
-        </div>
-        <router-link 
-          :to="{ name: 'VacanciesParser', query: { status: 'running' } }" 
-          class="vp-section-link"
-        >
-          Все задачи →
-        </router-link>
-      </div>
-      <div class="vp-tasks-list">
-        <div 
-          v-for="task in recentActiveTasks" 
-          :key="task.id"
-          class="vp-task-item"
-          @click="navigateToTask(task.id)"
-        >
-          <div class="vp-task-item-header">
-            <div class="vp-task-item-title-group">
-              <h4 class="vp-task-item-title">{{ task.name || 'Задача без названия' }}</h4>
-              <div class="vp-task-item-badges">
-                <span class="vp-badge vp-badge-rounded" :class="getSourceBadgeClass(task.source)">
-                  {{ task.source_display }}
-                </span>
-                <span class="vp-badge vp-badge-rounded" :class="getStatusBadgeClass(task.status)">
-                  {{ task.status_display }}
-                </span>
-              </div>
-            </div>
-            <div class="vp-task-item-progress-value">
-              {{ task.progress_percent }}%
-            </div>
-          </div>
-          <TaskProgressBar :task="task" />
-          <div class="vp-task-item-stats">
-            <span class="vp-task-stat">
-              <CheckCircle :size="14" class="vp-text-success" />
-              {{ task.completed_items || 0 }} выполнено
-            </span>
-            <span class="vp-task-stat">
-              <XCircle :size="14" :class="task.failed_items > 0 ? 'vp-text-danger' : 'vp-text-muted'" />
-              {{ task.failed_items || 0 }} ошибок
-            </span>
-            <span class="vp-task-stat">
-              <Clock :size="14" class="vp-text-info" />
-              {{ (task.total_items || 0) - (task.completed_items || 0) - (task.failed_items || 0) }} осталось
-            </span>
-          </div>
-          <div class="vp-task-item-footer">
-            <span class="vp-text-muted vp-text-sm">
-              Запущена: {{ formatRelativeTime(task.started_at || task.created_at) }}
-            </span>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- Информация о расписании -->
-    <div class="vp-section">
-      <div class="vp-section-header">
-        <div class="vp-section-title-group">
-          <Calendar :size="20" class="vp-text-danger" />
-          <h3>Расписание автоматического парсинга</h3>
-          <span class="vp-text-muted vp-text-sm">Ключевые сценарии, которые Celery Beat запускает по расписанию</span>
-        </div>
-      </div>
-      <div class="vp-schedule-info">
-        <div 
-          v-for="item in scheduleItems" 
-          :key="item.id" 
-          :class="['vp-schedule-item', item.queueVariant === 'danger' ? 'vp-schedule-item-danger' : 'vp-schedule-item-info']"
-        >
-          <div 
-            class="vp-schedule-time"
-            :class="item.queueVariant === 'danger' ? 'vp-text-danger' : 'vp-text-muted'"
-          >
-            {{ item.time }}
-          </div>
-          <div class="vp-schedule-content">
-            <div class="vp-schedule-title">{{ item.title }}</div>
-            <div class="vp-schedule-description">{{ item.description }}</div>
-          </div>
-          <div class="vp-schedule-meta">
-            <span 
-              class="vp-badge vp-badge-rounded" 
-              :class="item.queueVariant === 'danger' ? 'vp-badge-danger' : 'vp-badge-secondary'"
-            >
-              {{ item.queueLabel }}
-            </span>
-            <span 
-              v-if="item.frequency" 
-              class="vp-badge vp-badge-rounded vp-badge-secondary"
-            >
-              {{ item.frequency }}
-            </span>
-          </div>
-        </div>
-        <div class="vp-schedule-note">
-          <Info :size="16" />
-          <span>Расписание автоматически управляется Celery Beat. Здесь показаны основные сценарии; внутри каждой точки запускается несколько отдельных задач в фоне.</span>
-        </div>
-      </div>
-    </div>
-
-    <!-- Последние завершенные задачи -->
-    <div v-if="recentFinishedTasks.length > 0" class="vp-section">
-      <div class="vp-section-header">
-        <div class="vp-section-title-group">
-          <BarChart3 :size="20" class="vp-text-success" />
-          <h3>Последние завершенные задачи</h3>
-          <span class="vp-badge vp-badge-success vp-badge-rounded">{{ recentFinishedTasks.length }}</span>
-        </div>
-        <router-link 
-          :to="{ name: 'VacanciesParser', query: { status: 'completed' } }" 
-          class="vp-section-link"
-        >
-          Все завершенные →
-        </router-link>
-      </div>
-      <div class="vp-tasks-list">
-        <div 
-          v-for="task in recentFinishedTasks" 
-          :key="task.id"
-          class="vp-task-item vp-task-item-finished"
-          @click="navigateToTask(task.id)"
-        >
-          <div class="vp-task-item-header">
-            <div class="vp-task-item-title-group">
-              <h4 class="vp-task-item-title">{{ task.name || 'Задача без названия' }}</h4>
-              <div class="vp-task-item-badges">
-                <span class="vp-badge vp-badge-rounded" :class="getSourceBadgeClass(task.source)">
-                  {{ task.source_display }}
-                </span>
-                <span class="vp-badge vp-badge-rounded" :class="getStatusBadgeClass(task.status)">
-                  {{ task.status_display }}
-                </span>
-              </div>
-            </div>
-            <div class="vp-task-item-progress-value vp-text-success">
-              {{ task.progress_percent }}%
-            </div>
-          </div>
-          <div class="vp-task-item-stats">
-            <span class="vp-task-stat">
-              <CheckCircle :size="14" class="vp-text-success" />
-              {{ task.completed_items || 0 }} выполнено
-            </span>
-            <span class="vp-task-stat">
-              <XCircle :size="14" :class="task.failed_items > 0 ? 'vp-text-danger' : 'vp-text-muted'" />
-              {{ task.failed_items || 0 }} ошибок
-            </span>
-            <span class="vp-task-stat">
-              <Briefcase :size="14" class="vp-text-primary" />
-              {{ task.total_items || 0 }} всего
-            </span>
-          </div>
-          <div class="vp-task-item-footer">
-            <span class="vp-text-muted vp-text-sm">
-              Завершена: {{ formatRelativeTime(task.completed_at || task.updated_at) }}
-            </span>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- Пустое состояние -->
-    <div v-if="!loading && tasksStats.total === 0" class="vp-empty-state">
-      <Briefcase :size="48" class="vp-empty-icon" />
-      <h3 class="vp-empty-title">Нет задач парсинга</h3>
-      <p class="vp-empty-text">Создайте первую задачу парсинга для начала работы</p>
-      <button @click="createTask" class="vp-btn-create-empty">
-        <Plus :size="18" />
-        Создать задачу
-      </button>
-    </div>
-
-    <!-- Загрузка -->
-    <div v-if="loading && tasksStats.total === 0" class="vp-loading-state">
-      <div class="vp-spinner"></div>
-      <p class="vp-loading-text">Загрузка данных...</p>
-    </div>
-  </div>
-</template>
-
 <style lang="scss" scoped>
-@import '../scss/pages/dashboard';
+@import '../scss/main';
+
+.cursor-pointer { cursor: pointer; }
 </style>

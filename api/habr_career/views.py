@@ -23,6 +23,7 @@ from .tasks import (
     parse_habr_all_vacancies_task
 )
 from celery.result import AsyncResult
+from modules.vacancies_parser.api.core.views import StandardResultsSetPagination
 
 logger = logging.getLogger('modules.vacancies_parser.habr_career')
 _BROKER_ERRORS = (ConnectionRefusedError, OperationalError, ConnectionError, OSError)
@@ -54,8 +55,10 @@ def _normalize_search_text(raw_value):
 class VacancyViewSet(SwaggerSafeMixin, viewsets.ReadOnlyModelViewSet):
     """ViewSet для работы с вакансиями Хабр Карьеры"""
     permission_classes = [permissions.IsAuthenticated]
+    pagination_class = StandardResultsSetPagination
     filter_backends = [DjangoFilterBackend, SearchFilter, OrderingFilter]
-    search_fields = ['title', 'company_name', 'description', 'city', 'qualification']
+    # description может быть очень большим и сильно замедляет icontains-поиск
+    search_fields = ['title', 'company_name', 'city', 'qualification']
     ordering_fields = ['published_at', 'created_at', 'salary_from', 'salary_to', 'title']
     ordering = ['-published_at']
     filterset_fields = {
@@ -75,7 +78,12 @@ class VacancyViewSet(SwaggerSafeMixin, viewsets.ReadOnlyModelViewSet):
         if self.is_swagger_fake_view():
             return Vacancy.objects.none()
 
-        queryset = Vacancy.objects.all()
+        queryset = Vacancy.objects.all().defer(
+            'description',
+            'requirements',
+            'responsibilities',
+            'skills',
+        )
 
         skills = self.request.query_params.getlist('skills')
         if skills:

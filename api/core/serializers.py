@@ -13,6 +13,7 @@ from django.contrib.auth import get_user_model
 
 from .models import ParsingTask, TaskItem
 from .normalized_models import NormalizedVacancy, VacancyChangeHistory, ParsingStatistics
+from .monitoring_models import TaskRun, ExternalApiEvent
 
 User = get_user_model()
 
@@ -49,6 +50,7 @@ class ParsingTaskListSerializer(serializers.ModelSerializer):
             'updated_at',
             'started_at',
             'completed_at',
+            'error_message',
             'created_by_username',
         ]
         read_only_fields = [
@@ -247,6 +249,9 @@ class NormalizedVacancyListSerializer(serializers.ModelSerializer):
     source_display = serializers.CharField(source='get_source_display', read_only=True)
     parsing_mode_display = serializers.CharField(source='get_parsing_mode_display', read_only=True)
     salary_display = serializers.CharField(source='get_salary_display', read_only=True)
+    sources_meta = serializers.JSONField(read_only=True)
+    sources = serializers.SerializerMethodField()
+    sources_count = serializers.SerializerMethodField()
     
     class Meta:
         model = NormalizedVacancy
@@ -256,6 +261,9 @@ class NormalizedVacancyListSerializer(serializers.ModelSerializer):
             'source_display',
             'source_id',
             'source_url',
+            'sources_meta',
+            'sources',
+            'sources_count',
             'parsing_mode',
             'parsing_mode_display',
             'title',
@@ -269,6 +277,20 @@ class NormalizedVacancyListSerializer(serializers.ModelSerializer):
             'created_at',
             'updated_at',
         ]
+
+    def get_sources(self, obj):
+        meta = obj.sources_meta or []
+        sources = []
+        for item in meta:
+            if not isinstance(item, dict):
+                continue
+            src = item.get('source')
+            if src and src not in sources:
+                sources.append(src)
+        return sources
+
+    def get_sources_count(self, obj):
+        return len(self.get_sources(obj))
 
 
 class NormalizedVacancyDetailSerializer(serializers.ModelSerializer):
@@ -349,6 +371,49 @@ class ParsingStatisticsSerializer(serializers.ModelSerializer):
         if obj.total_processed == 0:
             return 0.0
         return round((obj.failed_items / obj.total_processed) * 100, 2)
+
+
+class TaskRunListSerializer(serializers.ModelSerializer):
+    status_display = serializers.CharField(source='get_status_display', read_only=True)
+
+    class Meta:
+        model = TaskRun
+        fields = [
+            'id',
+            'celery_task_id',
+            'task_name',
+            'source',
+            'parsing_task_id',
+            'status',
+            'status_display',
+            'started_at',
+            'finished_at',
+            'duration_sec',
+            'processed',
+            'saved',
+            'updated',
+            'errors',
+            'timeouts',
+            'http_429',
+            'retries',
+            'error_type',
+            'error_message',
+            'updated_at',
+        ]
+
+
+class ExternalApiEventSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = ExternalApiEvent
+        fields = [
+            'id',
+            'created_at',
+            'source',
+            'endpoint',
+            'event_type',
+            'count',
+            'celery_task_id',
+        ]
 
 
 class TaskProgressSerializer(serializers.Serializer):

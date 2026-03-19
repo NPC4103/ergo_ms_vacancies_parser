@@ -1,49 +1,52 @@
 <template>
-  <div class="vp-step-content">
-    <div class="vp-step-header">
-      <h3 class="vp-step-title">Выберите источник и режим парсинга</h3>
-      <p class="vp-step-description">
-        Выберите платформу для парсинга вакансий и предпочтительный режим работы
-      </p>
-    </div>
+  <div>
+    <p class="text-secondary mb-4">Выберите платформу для парсинга вакансий и предпочтительный режим работы</p>
 
-    <div class="vp-form-group">
-      <label class="vp-form-label">Название задачи</label>
+    <div class="mb-3">
+      <label class="form-label fw-medium">Название задачи</label>
       <input
         v-model="localData.name"
         type="text"
-        class="vp-form-control"
+        class="form-control"
         placeholder="Например: Парсинг Python вакансий Москва"
-      >
+      />
     </div>
 
-    <Select
-      v-model="localData.source"
-      :options="sourceOptions"
-      label="Источник данных"
-      placeholder="Выберите источник"
-      :required="true"
-      :error="errors.source"
-      @change="handleSourceChange"
-    />
+    <div class="mb-3">
+      <label class="form-label fw-medium">Источник данных <span class="text-danger">*</span></label>
+      <select
+        v-model="localData.source"
+        class="form-select"
+        :class="{ 'is-invalid': errors.source }"
+        @change="handleSourceChange"
+      >
+        <option value="">Выберите источник</option>
+        <option v-for="s in sources" :key="s.value" :value="s.value">{{ s.label }}</option>
+      </select>
+      <div class="invalid-feedback" v-if="errors.source">{{ errors.source }}</div>
+    </div>
 
-    <Select
-      v-model="localData.parsing_mode"
-      :options="modeOptions"
-      label="Режим парсинга"
-      :placeholder="parsingModePlaceholder"
-      :required="true"
-      :disabled="!localData.source"
-      :error="errors.parsing_mode"
-      @change="handleModeChange"
-    />
+    <div class="mb-3">
+      <label class="form-label fw-medium">Режим парсинга <span class="text-danger">*</span></label>
+      <select
+        v-model="localData.parsing_mode"
+        class="form-select"
+        :class="{ 'is-invalid': errors.parsing_mode }"
+        :disabled="!localData.source"
+        @change="handleModeChange"
+      >
+        <option value="">{{ localData.source ? 'Выберите режим' : 'Сначала выберите источник' }}</option>
+        <option v-for="m in availableModes" :key="m.value" :value="m.value">{{ m.label }}</option>
+      </select>
+      <div class="invalid-feedback" v-if="errors.parsing_mode">{{ errors.parsing_mode }}</div>
+    </div>
 
-    <div v-if="localData.source && localData.parsing_mode" class="vp-source-info">
-      <div class="vp-source-info-card" :class="getSourceCardClass(localData.source)">
-        <component :is="getSourceIcon(localData.source)" :size="24" />
+    <div v-if="localData.source && localData.parsing_mode" class="alert border" :class="sourceAlertClass" role="alert">
+      <div class="d-flex align-items-center gap-2">
+        <component :is="sourceIcon" :size="20" />
         <div>
-          <div class="vp-source-info-title">{{ getSourceLabel(localData.source) }}</div>
-          <div class="vp-source-info-subtitle">{{ getModeLabel(localData.parsing_mode) }}</div>
+          <div class="fw-semibold">{{ sourceLabel }}</div>
+          <small class="opacity-75">{{ modeLabel }}</small>
         </div>
       </div>
     </div>
@@ -52,99 +55,44 @@
 
 <script setup>
 import { computed } from 'vue'
-import { Database, Briefcase, Building2 } from 'lucide-vue-next'
-import Select from '../Select.vue'
-import { getSourceLogoUrl } from '../../js/sourceLogos'
+import { Briefcase, Building2, Database } from 'lucide-vue-next'
 
 const props = defineProps({
-  modelValue: {
-    type: Object,
-    required: true
-  },
-  sources: {
-    type: Array,
-    required: true
-  },
-  errors: {
-    type: Object,
-    default: () => ({})
-  }
+  modelValue: { type: Object, required: true },
+  sources:    { type: Array, required: true },
+  errors:     { type: Object, default: () => ({}) }
 })
-
 const emit = defineEmits(['update:modelValue', 'source-changed', 'mode-changed'])
 
 const localData = computed({
   get: () => props.modelValue,
-  set: (value) => emit('update:modelValue', value)
+  set: v => emit('update:modelValue', v)
 })
 
 const availableModes = computed(() => {
-  if (!localData.value.source) return []
-  const source = props.sources.find(s => s.value === localData.value.source)
-  return source ? source.modes : []
+  const src = props.sources.find(s => s.value === localData.value.source)
+  return src ? src.modes : []
 })
+const sourceLabel = computed(() => props.sources.find(s => s.value === localData.value.source)?.label || '')
+const modeLabel   = computed(() => availableModes.value.find(m => m.value === localData.value.parsing_mode)?.label || '')
 
-const sourceOptions = computed(() => {
-  return props.sources.map(source => {
-    const iconUrl = getSourceLogoUrl(source.value)
-    return {
-      value: source.value,
-      label: source.label,
-      ...(iconUrl ? { iconUrl } : {}),
-      icon: getSourceIcon(source.value)
-    }
-  })
-})
+const sourceAlertClass = computed(() => ({
+  headhunter:   'alert-danger',
+  habr_career:  'alert-info',
+  superjob:     'alert-success'
+})[localData.value.source] || 'alert-secondary')
 
-const modeOptions = computed(() => {
-  return availableModes.value.map(mode => ({
-    value: mode.value,
-    label: mode.label
-  }))
-})
-
-const parsingModePlaceholder = computed(() =>
-  localData.value.source ? 'Выберите режим' : 'Сначала выберите источник'
-)
+const sourceIcon = computed(() => ({
+  headhunter:  Briefcase,
+  habr_career: Building2,
+  superjob:    Database
+})[localData.value.source] || Briefcase)
 
 function handleSourceChange() {
   localData.value.parsing_mode = ''
   emit('source-changed', localData.value.source)
 }
-
 function handleModeChange() {
   emit('mode-changed', localData.value.parsing_mode)
 }
-
-function getSourceLabel(source) {
-  const sourceObj = props.sources.find(s => s.value === source)
-  return sourceObj ? sourceObj.label : source
-}
-
-function getModeLabel(mode) {
-  const modeObj = availableModes.value.find(m => m.value === mode)
-  return modeObj ? modeObj.label : mode
-}
-
-function getSourceCardClass(source) {
-  const classes = {
-    'headhunter': 'vp-source-info-danger',
-    'habr_career': 'vp-source-info-info',
-    'superjob': 'vp-source-info-success'
-  }
-  return classes[source] || ''
-}
-
-function getSourceIcon(source) {
-  const icons = {
-    'headhunter': Briefcase,
-    'habr_career': Building2,
-    'superjob': Database
-  }
-  return icons[source] || Database
-}
 </script>
-
-<style lang="scss" scoped>
-@import '../../scss/components/create-task-steps';
-</style>

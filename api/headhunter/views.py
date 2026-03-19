@@ -21,6 +21,7 @@ from .tasks import (
 from celery.result import AsyncResult
 from modules.vacancies_parser.api.core.utils.task_runner import safe_task_run
 from modules.vacancies_parser.api.core.utils.celery_broker import BrokerUnavailableError
+from modules.vacancies_parser.api.core.views import StandardResultsSetPagination
 
 logger = logging.getLogger('modules.vacancies_parser.headhunter')
 
@@ -28,8 +29,10 @@ logger = logging.getLogger('modules.vacancies_parser.headhunter')
 class VacancyViewSet(SwaggerSafeMixin, viewsets.ReadOnlyModelViewSet):
     """ViewSet для работы с вакансиями"""
     permission_classes = [permissions.IsAuthenticated]
+    pagination_class = StandardResultsSetPagination
     filter_backends = [DjangoFilterBackend, SearchFilter, OrderingFilter]
-    search_fields = ['title', 'company_name', 'description', 'city', 'professional_role']
+    # description может быть очень большим и сильно замедляет icontains-поиск
+    search_fields = ['title', 'company_name', 'city', 'professional_role']
     ordering_fields = ['published_at', 'created_at', 'salary_from', 'salary_to', 'title']
     ordering = ['-published_at']
     filterset_fields = {
@@ -49,8 +52,13 @@ class VacancyViewSet(SwaggerSafeMixin, viewsets.ReadOnlyModelViewSet):
         """Получение queryset с учетом фильтрации"""
         if self.is_swagger_fake_view():
             return Vacancy.objects.none()
-        
-        queryset = Vacancy.objects.all()
+
+        queryset = Vacancy.objects.all().defer(
+            'description',
+            'requirements',
+            'responsibilities',
+            'skills',
+        )
         
         # Фильтрация по навыкам (key_skills содержит)
         key_skills = self.request.query_params.getlist('key_skills')

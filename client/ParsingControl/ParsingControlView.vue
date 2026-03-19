@@ -1,386 +1,261 @@
-<script setup>
-import { ref, computed } from 'vue'
-import { Play, Settings, CheckCircle, XCircle, Clock, Code, Users, AlertCircle } from 'lucide-vue-next'
-import { useParsing } from '../composables/useParsing'
-import { useToast } from 'vue-toastification'
-import ConfirmDialog from '@/components/ConfirmDialog.vue'
-
-const toast = useToast()
-const { parsing, taskId, taskStatus, parseByRoles, parseByTechnologies, checkTaskStatus } = useParsing()
-
-const ACTIVE_SOURCE = 'headhunter'
-
-// Форма для парсинга по ролям
-const rolesForm = ref({
-  area: 113,
-  pages: 20,
-  delay: 1.5,
-  get_details: true,
-  max_concurrent_roles: 5,
-  batch_size: 25,
-  force_refresh_roles: false,
-  incremental: false
-})
-
-// Форма для парсинга по технологиям
-const techForm = ref({
-  technologies: '',
-  area: 113,
-  pages: 10,
-  delay: 1.5,
-  get_details: true
-})
-
-const activeTab = ref('roles')
-const showConfirmDialog = ref(false)
-const confirmAction = ref(null)
-
-const handleParseByRoles = () => {
-  confirmAction.value = async () => {
-    await parseByRoles(ACTIVE_SOURCE, rolesForm.value)
-    if (taskId.value) {
-      startStatusCheck()
-    }
-  }
-  showConfirmDialog.value = true
-}
-
-const handleParseByTechnologies = () => {
-  const technologies = techForm.value.technologies
-    .split(',')
-    .map(t => t.trim())
-    .filter(t => t)
-
-  if (technologies.length === 0) {
-    toast.error('Укажите хотя бы одну технологию')
-    return
-  }
-
-  confirmAction.value = async () => {
-    await parseByTechnologies(ACTIVE_SOURCE, {
-      ...techForm.value,
-      technologies
-    })
-    if (taskId.value) {
-      startStatusCheck()
-    }
-  }
-  showConfirmDialog.value = true
-}
-
-const confirmParse = () => {
-  showConfirmDialog.value = false
-  if (confirmAction.value) {
-    confirmAction.value()
-  }
-}
-
-const startStatusCheck = () => {
-  const interval = setInterval(async () => {
-    if (!taskId.value) {
-      clearInterval(interval)
-      return
-    }
-    
-    try {
-      await checkTaskStatus(ACTIVE_SOURCE)
-      if (taskStatus.value && (taskStatus.value.status === 'SUCCESS' || taskStatus.value.status === 'FAILURE')) {
-        clearInterval(interval)
-        if (taskStatus.value.status === 'SUCCESS') {
-          toast.success('Парсинг завершен успешно')
-        } else {
-          toast.error('Ошибка при парсинге')
-        }
-      }
-    } catch (error) {
-      clearInterval(interval)
-    }
-  }, 3000)
-}
-
-const taskStatusText = computed(() => {
-  if (!taskStatus.value) return 'Ожидание...'
-  const status = taskStatus.value.status
-  if (status === 'SUCCESS') return 'Завершено успешно'
-  if (status === 'FAILURE') return 'Ошибка'
-  if (status === 'PENDING') return 'В очереди'
-  if (status === 'STARTED') return 'Выполняется'
-  return status
-})
-
-const taskStatusIcon = computed(() => {
-  if (!taskStatus.value) return Clock
-  const status = taskStatus.value.status
-  if (status === 'SUCCESS') return CheckCircle
-  if (status === 'FAILURE') return XCircle
-  return Clock
-})
-
-const taskStatusColor = computed(() => {
-  if (!taskStatus.value) return 'vp-text-secondary'
-  const status = taskStatus.value.status
-  if (status === 'SUCCESS') return 'vp-text-success'
-  if (status === 'FAILURE') return 'vp-text-danger'
-  return 'vp-text-warning'
-})
-</script>
-
 <template>
-  <div class="vp-parsing-control">
+  <div class="vp-page p-4">
     <div class="vp-page-header">
-      <h2>Управление парсингом</h2>
-    </div>
-
-    <!-- Статус задачи -->
-    <div v-if="taskId" class="vp-task-card">
-      <div class="vp-task-header">
-        <component :is="taskStatusIcon" :size="24" :class="taskStatusColor" />
-        <div class="task-status-info">
-          <div class="task-status-id vp-text-sm">Task ID: {{ taskId }}</div>
-          <div class="task-status-text vp-text-muted">{{ taskStatusText }}</div>
+      <div class="vp-page-title">
+        <div class="vp-page-icon">
+          <Settings2 :size="20" />
         </div>
-        <button 
-          @click="checkTaskStatus()" 
-          class="vp-btn-secondary"
-        >
-          Обновить
-        </button>
-      </div>
-      <div v-if="taskStatus && taskStatus.result" class="task-result">
-        <pre>{{ JSON.stringify(taskStatus.result, null, 2) }}</pre>
-      </div>
-      <div 
-        v-if="taskStatus && taskStatus.error" 
-        class="vp-alert vp-alert-danger"
-      >
-        <AlertCircle :size="18" class="vp-alert-icon" />
-        <div class="vp-alert-content">
-          <div class="vp-alert-title">Ошибка задачи:</div>
-          <div>{{ taskStatus.error }}</div>
+        <div>
+          <h1>Управление парсингом</h1>
+          <p>Ручной запуск парсинга по ролям и технологиям</p>
         </div>
       </div>
     </div>
 
     <!-- Вкладки -->
-    <div class="vp-tabs">
-      <button 
-        class="vp-tab"
-        :class="{ 'vp-tab-active': activeTab === 'roles' }"
-        @click="activeTab = 'roles'"
-      >
-        <Users :size="18" />
-        По ролям
-      </button>
-      <button 
-        class="vp-tab"
-        :class="{ 'vp-tab-active': activeTab === 'technologies' }"
-        @click="activeTab = 'technologies'"
-      >
-        <Code :size="18" />
-        По технологиям
+    <ul class="nav nav-tabs vp-nav-tabs mb-4">
+      <li class="nav-item">
+        <button class="nav-link" :class="{ active: activeTab === 'roles' }" @click="activeTab = 'roles'">
+          <Users :size="14" />
+          По ролям
+        </button>
+      </li>
+      <li class="nav-item">
+        <button class="nav-link" :class="{ active: activeTab === 'tech' }" @click="activeTab = 'tech'">
+          <Code2 :size="14" />
+          По технологиям
+        </button>
+      </li>
+    </ul>
+
+    <!-- Статус Celery задачи -->
+    <div v-if="taskId" class="alert d-flex align-items-center gap-2 mb-4" :class="taskStatusAlertClass" role="alert">
+      <span v-if="taskStatus?.status === 'PENDING' || taskStatus?.status === 'STARTED'" class="spinner-border spinner-border-sm flex-shrink-0"></span>
+      <CheckCircle2 v-else-if="taskStatus?.status === 'SUCCESS'" :size="18" class="flex-shrink-0" />
+      <AlertCircle v-else-if="taskStatus?.status === 'FAILURE'" :size="18" class="flex-shrink-0" />
+      <div>
+        <div class="fw-semibold">
+          {{ taskStatusLabel }}
+        </div>
+        <small v-if="taskId">Task ID: <code>{{ taskId }}</code></small>
+      </div>
+      <button class="btn btn-link btn-sm p-0 ms-auto text-decoration-none" @click="resetTask">
+        <X :size="16" />
       </button>
     </div>
 
-    <!-- Парсинг по ролям -->
-    <div v-if="activeTab === 'roles'" class="vp-tab-content">
-      <div class="vp-form-section">
-        <div class="vp-form-section-header">
-        <Settings :size="20" />
-        <span>Парсинг по профессиональным ролям</span>
-      </div>
-      <div class="vp-form-section-body">
-        <div class="vp-form-section-grid">
-          <div class="vp-form-section-field">
-          <label>Регион (area)</label>
-          <input
-            v-model.number="rolesForm.area"
-            type="number"
-            class="vp-form-control"
-            placeholder="113 (Москва)"
-          />
-          <small class="vp-form-text">113 - Москва, 2 - СПб, и т.д.</small>
+    <!-- По ролям -->
+    <div v-if="activeTab === 'roles'" class="vp-card p-4">
+      <h6 class="fw-semibold mb-3 d-flex align-items-center gap-2">
+        <Users :size="16" class="text-primary" />
+        Парсинг HeadHunter по ролям
+      </h6>
+      <div class="row g-3">
+        <div class="col-sm-6 col-lg-4">
+          <label class="form-label fw-medium">Регион</label>
+          <select v-model.number="rolesForm.area" class="form-select">
+            <option value="1">Москва</option>
+            <option value="2">Санкт-Петербург</option>
+            <option value="113">Россия (все)</option>
+            <option value="66">Нижний Новгород</option>
+            <option value="88">Казань</option>
+          </select>
         </div>
-
-        <div class="vp-form-section-field">
-          <label>Количество страниц</label>
-          <input
-            v-model.number="rolesForm.pages"
-            type="number"
-            class="vp-form-control"
-            min="1"
-            max="200"
-          />
+        <div class="col-sm-6 col-lg-4">
+          <label class="form-label fw-medium">Страниц на роль</label>
+          <input v-model.number="rolesForm.pages" type="number" class="form-control" min="1" max="20" />
+          <div class="form-text">Максимум 20 страниц</div>
         </div>
-
-        <div class="vp-form-section-field">
-          <label>Задержка (сек)</label>
-          <input
-            v-model.number="rolesForm.delay"
-            type="number"
-            step="0.1"
-            class="vp-form-control"
-            min="0.1"
-          />
+        <div class="col-sm-6 col-lg-4">
+          <label class="form-label fw-medium">Задержка (сек)</label>
+          <input v-model.number="rolesForm.delay" type="number" class="form-control" min="0.1" max="5" step="0.1" />
         </div>
-
-        <div class="vp-form-section-field">
-          <label>Параллельных ролей</label>
-          <input
-            v-model.number="rolesForm.max_concurrent_roles"
-            type="number"
-            class="vp-form-control"
-            min="1"
-            max="10"
-          />
+        <div class="col-sm-6 col-lg-4">
+          <label class="form-label fw-medium">Макс. одновременных ролей</label>
+          <input v-model.number="rolesForm.max_concurrent_roles" type="number" class="form-control" min="1" max="10" />
         </div>
-
-        <div class="vp-form-section-field">
-          <label>Размер батча</label>
-          <input
-            v-model.number="rolesForm.batch_size"
-            type="number"
-            class="vp-form-control"
-            min="1"
-            max="50"
-          />
-        </div>
-
-        <div class="vp-form-section-field">
-          <label>
-            <input
-              v-model="rolesForm.get_details"
-              type="checkbox"
-            />
-            <span>Получать детальную информацию</span>
-          </label>
-        </div>
-
-        <div class="vp-form-section-field">
-          <label>
-            <input
-              v-model="rolesForm.force_refresh_roles"
-              type="checkbox"
-            />
-            <span>Принудительно обновить список ролей</span>
-          </label>
-        </div>
-
-        <div class="vp-form-section-field">
-          <label>
-            <input
-              v-model="rolesForm.incremental"
-              type="checkbox"
-            />
-            <span>Инкрементальный режим</span>
-          </label>
+        <div class="col-sm-6 col-lg-4">
+          <label class="form-label fw-medium">Размер батча</label>
+          <input v-model.number="rolesForm.batch_size" type="number" class="form-control" min="1" max="50" />
         </div>
       </div>
+      <div class="mt-3 d-flex flex-wrap gap-3">
+        <div class="form-check">
+          <input class="form-check-input" type="checkbox" v-model="rolesForm.get_details" id="getRolesDetails" />
+          <label class="form-check-label" for="getRolesDetails" style="font-size:0.875rem;">Загружать детали</label>
+        </div>
+        <div class="form-check">
+          <input class="form-check-input" type="checkbox" v-model="rolesForm.update_existing" id="updateExisting" />
+          <label class="form-check-label" for="updateExisting" style="font-size:0.875rem;">Обновлять существующие</label>
+        </div>
+        <div class="form-check">
+          <input class="form-check-input" type="checkbox" v-model="rolesForm.skip_existing" id="skipExisting" />
+          <label class="form-check-label" for="skipExisting" style="font-size:0.875rem;">Пропускать дубли</label>
+        </div>
       </div>
-
-      <div class="vp-form-section-actions">
-        <button 
-          @click="handleParseByRoles" 
-          class="vp-btn-primary"
+      <div class="mt-4">
+        <button
+          class="btn btn-primary d-flex align-items-center gap-2"
+          @click="launchRolesParsing"
           :disabled="parsing"
         >
-          <Play :size="18" />
-          {{ parsing ? 'Запуск...' : 'Запустить парсинг' }}
+          <span v-if="parsing" class="spinner-border spinner-border-sm"></span>
+          <Play v-else :size="16" />
+          Запустить парсинг по ролям
         </button>
-      </div>
       </div>
     </div>
 
-    <!-- Парсинг по технологиям -->
-    <div v-if="activeTab === 'technologies'" class="vp-tab-content">
-      <div class="vp-form-section">
-        <div class="vp-form-section-header">
-        <Settings :size="20" />
-        <span>Парсинг по технологиям</span>
+    <!-- По технологиям -->
+    <div v-if="activeTab === 'tech'" class="vp-card p-4">
+      <h6 class="fw-semibold mb-3 d-flex align-items-center gap-2">
+        <Code2 :size="16" class="text-primary" />
+        Парсинг HeadHunter по технологиям
+      </h6>
+      <div class="mb-3">
+        <label class="form-label fw-medium">
+          Список технологий <span class="text-danger">*</span>
+        </label>
+        <textarea
+          v-model="techForm.technologies"
+          class="form-control"
+          rows="4"
+          placeholder="Python, JavaScript, React, Django..."
+          style="font-size:0.875rem;"
+        ></textarea>
+        <div class="form-text">Введите технологии через запятую или с новой строки</div>
       </div>
-      <div class="vp-form-section-body">
-        <div class="vp-form-section-grid">
-          <div class="vp-form-section-field">
-          <label>Технологии (через запятую)</label>
-          <textarea
-            v-model="techForm.technologies"
-            class="vp-form-control"
-            rows="3"
-            placeholder="Python, Django, Vue.js, React..."
-          ></textarea>
-          <small class="vp-form-text">Укажите технологии через запятую</small>
+      <div class="row g-3">
+        <div class="col-sm-6 col-lg-4">
+          <label class="form-label fw-medium">Регион</label>
+          <select v-model.number="techForm.area" class="form-select">
+            <option value="1">Москва</option>
+            <option value="2">Санкт-Петербург</option>
+            <option value="113">Россия (все)</option>
+            <option value="66">Нижний Новгород</option>
+            <option value="88">Казань</option>
+          </select>
         </div>
-
-        <div class="vp-form-section-field">
-          <label>Регион (area)</label>
-          <input
-            v-model.number="techForm.area"
-            type="number"
-            class="vp-form-control"
-            placeholder="113 (Москва)"
-          />
+        <div class="col-sm-6 col-lg-4">
+          <label class="form-label fw-medium">Страниц на технологию</label>
+          <input v-model.number="techForm.pages" type="number" class="form-control" min="1" max="20" />
         </div>
-
-        <div class="vp-form-section-field">
-          <label>Количество страниц</label>
-          <input
-            v-model.number="techForm.pages"
-            type="number"
-            class="vp-form-control"
-            min="1"
-            max="50"
-          />
-        </div>
-
-        <div class="vp-form-section-field">
-          <label>Задержка (сек)</label>
-          <input
-            v-model.number="techForm.delay"
-            type="number"
-            step="0.1"
-            class="vp-form-control"
-            min="0.1"
-          />
-        </div>
-
-        <div class="vp-form-section-field">
-          <label>
-            <input
-              v-model="techForm.get_details"
-              type="checkbox"
-            />
-            <span>Получать детальную информацию</span>
-          </label>
+        <div class="col-sm-6 col-lg-4">
+          <label class="form-label fw-medium">Задержка (сек)</label>
+          <input v-model.number="techForm.delay" type="number" class="form-control" min="0.1" max="5" step="0.1" />
         </div>
       </div>
-      </div>
-
-      <div class="vp-form-section-actions">
-        <button 
-          @click="handleParseByTechnologies" 
-          class="vp-btn-primary"
-          :disabled="parsing"
+      <div class="mt-4">
+        <button
+          class="btn btn-primary d-flex align-items-center gap-2"
+          @click="launchTechParsing"
+          :disabled="parsing || !techForm.technologies.trim()"
         >
-          <Play :size="18" />
-          {{ parsing ? 'Запуск...' : 'Запустить парсинг' }}
+          <span v-if="parsing" class="spinner-border spinner-border-sm"></span>
+          <Play v-else :size="16" />
+          Запустить парсинг по технологиям
         </button>
-      </div>
       </div>
     </div>
 
-    <!-- Диалог подтверждения -->
-    <ConfirmDialog
-      :show="showConfirmDialog"
-      title="Запустить парсинг?"
-      message="Это запустит задачу парсинга в фоновом режиме. Процесс может занять некоторое время."
-      confirm-text="Запустить"
-      cancel-text="Отмена"
-      @confirm="confirmParse"
-      @close="showConfirmDialog = false"
-      @cancel="showConfirmDialog = false"
-    />
+    <ConfirmDialog ref="confirmDialogRef" />
   </div>
 </template>
 
+<script setup>
+import { ref, computed } from 'vue'
+import { Settings2, Users, Code2, Play, X, CheckCircle2, AlertCircle } from 'lucide-vue-next'
+import { useToast } from 'vue-toastification'
+import ConfirmDialog from '@/components/ConfirmDialog.vue'
+import { useParsing } from '../composables/useParsing'
+
+const toast = useToast()
+const { parsing, taskId, taskStatus, parseByRoles, parseByTechnologies, checkTaskStatus, reset } = useParsing()
+const confirmDialogRef = ref(null)
+const activeTab = ref('roles')
+
+const rolesForm = ref({
+  area: 1,
+  pages: 2,
+  delay: 0.5,
+  max_concurrent_roles: 3,
+  batch_size: 10,
+  get_details: true,
+  update_existing: false,
+  skip_existing: true
+})
+
+const techForm = ref({
+  technologies: '',
+  area: 1,
+  pages: 2,
+  delay: 0.5
+})
+
+const taskStatusAlertClass = computed(() => {
+  const s = taskStatus.value?.status
+  if (!s || s === 'PENDING' || s === 'STARTED') return 'alert-info'
+  if (s === 'SUCCESS') return 'alert-success'
+  if (s === 'FAILURE') return 'alert-danger'
+  return 'alert-secondary'
+})
+
+const taskStatusLabel = computed(() => {
+  const s = taskStatus.value?.status
+  const map = { PENDING: 'Задача поставлена в очередь...', STARTED: 'Парсинг выполняется...', SUCCESS: 'Парсинг завершён успешно', FAILURE: 'Ошибка парсинга', REVOKED: 'Задача отменена' }
+  return map[s] || 'Задача запущена'
+})
+
+let pollTimer = null
+function startPolling() {
+  pollTimer = setInterval(async () => {
+    if (!taskId.value) { clearInterval(pollTimer); return }
+    await checkTaskStatus('headhunter')
+    const s = taskStatus.value?.status
+    if (s === 'SUCCESS' || s === 'FAILURE' || s === 'REVOKED') clearInterval(pollTimer)
+  }, 3000)
+}
+function resetTask() { reset(); clearInterval(pollTimer) }
+
+async function launchRolesParsing() {
+  const ok = await confirmDialogRef.value?.open({
+    title: 'Запустить парсинг по ролям?',
+    message: `Будет запущен парсинг HeadHunter по всем IT-ролям. Регион: ${rolesForm.value.area}, страниц: ${rolesForm.value.pages}.`,
+    confirmText: 'Запустить',
+    confirmVariant: 'primary'
+  })
+  if (!ok) return
+  try {
+    await parseByRoles('headhunter', { ...rolesForm.value })
+    startPolling()
+  } catch (e) {
+    // Ошибка обработана в useParsing
+  }
+}
+
+async function launchTechParsing() {
+  if (!techForm.value.technologies.trim()) { toast.warning('Введите список технологий'); return }
+  const technologies = techForm.value.technologies
+    .split(/[,\n]+/)
+    .map(t => t.trim())
+    .filter(Boolean)
+
+  const ok = await confirmDialogRef.value?.open({
+    title: 'Запустить парсинг по технологиям?',
+    message: `Будет запущен парсинг по ${technologies.length} технологиям.`,
+    confirmText: 'Запустить',
+    confirmVariant: 'primary'
+  })
+  if (!ok) return
+  try {
+    await parseByTechnologies('headhunter', { technologies, area: techForm.value.area, pages: techForm.value.pages, delay: techForm.value.delay })
+    startPolling()
+  } catch (e) {
+    // Ошибка обработана в useParsing
+  }
+}
+</script>
+
 <style lang="scss" scoped>
-@import '../scss/pages/parsing-control';
+@import '../scss/main';
 </style>

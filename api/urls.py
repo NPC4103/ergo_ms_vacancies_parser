@@ -16,6 +16,9 @@ from .core.views import (
     TaskItemViewSet,
     NormalizedVacancyViewSet,
     ParsingStatisticsViewSet,
+    TaskRunViewSet,
+    ExternalApiEventViewSet,
+    SystemJobsViewSet,
 )
 
 app_name = 'vacancies_parser'
@@ -28,6 +31,9 @@ router.register(r'tasks', ParsingTaskViewSet, basename='task')
 router.register(r'items', TaskItemViewSet, basename='item')
 router.register(r'vacancies', NormalizedVacancyViewSet, basename='vacancy')
 router.register(r'statistics', ParsingStatisticsViewSet, basename='statistics')
+router.register(r'task-runs', TaskRunViewSet, basename='task-run')
+router.register(r'external-api-events', ExternalApiEventViewSet, basename='external-api-event')
+router.register(r'system-jobs', SystemJobsViewSet, basename='system-job')
 
 # Прямое подключение router.urls (без вложенного include)
 urlpatterns = router.urls

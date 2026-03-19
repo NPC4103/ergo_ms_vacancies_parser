@@ -1,39 +1,31 @@
 <template>
-  <div class="vp-step-indicator">
-    <div 
-      v-for="(step, index) in steps" 
-      :key="index"
-      class="vp-step-item"
+  <div class="vp-step-indicator mb-4">
+    <div
+      v-for="(step, index) in steps"
+      :key="step.key"
+      class="vp-step"
       :class="{
-        'vp-step-active': currentStep === index,
-        'vp-step-completed': currentStep > index,
-        'vp-step-disabled': currentStep < index
+        active:    index === currentStep,
+        completed: index < currentStep
       }"
     >
-      <div class="vp-step-number">
-        <Check v-if="currentStep > index" :size="16" />
+      <div class="vp-step-circle">
+        <Check v-if="index < currentStep" :size="14" />
         <span v-else>{{ index + 1 }}</span>
       </div>
-      <div class="vp-step-label">{{ step.label }}</div>
+      <span class="vp-step-label">{{ step.label }}</span>
     </div>
   </div>
 </template>
 
 <script setup>
 import { Check } from 'lucide-vue-next'
-
 defineProps({
-  steps: {
-    type: Array,
-    required: true
-  },
-  currentStep: {
-    type: Number,
-    required: true
-  }
+  steps:       { type: Array, required: true },
+  currentStep: { type: Number, required: true }
 })
 </script>
 
 <style lang="scss" scoped>
-@import '../../scss/components/step-indicator';
+@import '../../scss/main';
 </style>

@@ -1,122 +1,84 @@
 <template>
-  <div class="vp-step-content">
-    <div class="vp-step-header">
-      <h3 class="vp-step-title">Проверьте параметры задачи</h3>
-      <p class="vp-step-description">
-        Убедитесь, что все параметры настроены правильно перед созданием задачи
-      </p>
+  <div>
+    <p class="text-secondary mb-4">Убедитесь, что все параметры настроены правильно</p>
+
+    <div class="card border">
+      <div class="card-body">
+        <h6 class="card-subtitle mb-3 text-secondary text-uppercase" style="font-size: 0.7rem; letter-spacing: 0.08em;">Основная информация</h6>
+        <dl class="row mb-0">
+          <dt class="col-sm-4 text-secondary fw-normal">Название</dt>
+          <dd class="col-sm-8 fw-semibold mb-2">{{ taskName || 'Будет сгенерировано автоматически' }}</dd>
+          <dt class="col-sm-4 text-secondary fw-normal">Источник</dt>
+          <dd class="col-sm-8 mb-2">
+            <span class="vp-source-badge" :class="`source-${source}`">{{ getSourceLabel(source) }}</span>
+          </dd>
+          <dt class="col-sm-4 text-secondary fw-normal">Режим</dt>
+          <dd class="col-sm-8 mb-0">
+            <span class="badge bg-secondary bg-opacity-10 text-body">{{ getModeLabel(parsingMode) }}</span>
+          </dd>
+        </dl>
+      </div>
     </div>
 
-    <div class="vp-summary-card">
-      <div class="vp-summary-section">
-        <h4 class="vp-summary-section-title">Основная информация</h4>
-        <div class="vp-summary-item">
-          <span class="vp-summary-label">Название:</span>
-          <span class="vp-summary-value">{{ taskName || 'Не указано' }}</span>
-        </div>
-        <div class="vp-summary-item">
-          <span class="vp-summary-label">Источник:</span>
-          <span class="vp-summary-value">{{ getSourceLabel(source) }}</span>
-        </div>
-        <div class="vp-summary-item">
-          <span class="vp-summary-label">Режим:</span>
-          <span class="vp-summary-value">{{ getModeLabel(parsingMode) }}</span>
-        </div>
-      </div>
-
-      <div class="vp-summary-section">
-        <h4 class="vp-summary-section-title">Параметры поиска</h4>
-        <div v-for="(value, key) in config" :key="key" class="vp-summary-item">
-          <span class="vp-summary-label">{{ getConfigLabel(key) }}:</span>
-          <span class="vp-summary-value">{{ formatConfigValue(key, value) }}</span>
-        </div>
+    <div class="card border mt-3" v-if="configEntries.length">
+      <div class="card-body">
+        <h6 class="card-subtitle mb-3 text-secondary text-uppercase" style="font-size: 0.7rem; letter-spacing: 0.08em;">Параметры поиска</h6>
+        <dl class="row mb-0">
+          <template v-for="[key, value] in configEntries" :key="key">
+            <dt class="col-sm-4 text-secondary fw-normal">{{ getConfigLabel(key) }}</dt>
+            <dd class="col-sm-8 mb-2">{{ formatConfigValue(key, value) }}</dd>
+          </template>
+        </dl>
       </div>
     </div>
   </div>
 </template>
 
 <script setup>
+import { computed } from 'vue'
 
 const props = defineProps({
-  taskName: {
-    type: String,
-    default: ''
-  },
-  source: {
-    type: String,
-    required: true
-  },
-  parsingMode: {
-    type: String,
-    required: true
-  },
-  config: {
-    type: Object,
-    required: true
-  },
-  sources: {
-    type: Array,
-    required: true
-  }
+  taskName:    { type: String, default: '' },
+  source:      { type: String, required: true },
+  parsingMode: { type: String, required: true },
+  config:      { type: Object, required: true },
+  sources:     { type: Array, required: true }
 })
 
+const configEntries = computed(() =>
+  Object.entries(props.config).filter(([, v]) => v !== '' && v !== null && v !== undefined)
+)
+
 function getSourceLabel(source) {
-  const sourceObj = props.sources.find(s => s.value === source)
-  return sourceObj ? sourceObj.label : source
+  return props.sources.find(s => s.value === source)?.label || source
 }
-
 function getModeLabel(mode) {
-  const source = props.sources.find(s => s.value === props.source)
-  if (!source) return mode
-  const modeObj = source.modes.find(m => m.value === mode)
-  return modeObj ? modeObj.label : mode
+  const src = props.sources.find(s => s.value === props.source)
+  return src?.modes.find(m => m.value === mode)?.label || mode
 }
-
 function getConfigLabel(key) {
   const labels = {
-    'area': 'Регион',
-    'pages': 'Количество страниц',
-    'max_pages': 'Макс. страниц',
-    'per_page': 'Вакансий на страницу',
-    'items_per_page': 'Вакансий на страницу',
-    'delay': 'Задержка (сек)',
-    'text': 'Поисковый запрос',
-    'keyword': 'Поисковый запрос',
-    'keywords': 'Поисковый запрос',
-    'q': 'Поисковый запрос',
-    'town': 'Город',
-    'catalogues': 'Каталоги',
-    'experience': 'Опыт работы'
+    area: 'Регион', pages: 'Страниц', max_pages: 'Макс. страниц',
+    per_page: 'На страницу', items_per_page: 'На страницу',
+    delay: 'Задержка (сек)', text: 'Запрос', keyword: 'Запрос',
+    keywords: 'Запрос', q: 'Запрос', town: 'Город',
+    catalogues: 'Каталоги', experience: 'Опыт'
   }
   return labels[key] || key
 }
-
 function formatConfigValue(key, value) {
   if (key === 'area') {
-    const regions = {
-      '1': 'Москва',
-      '2': 'Санкт-Петербург',
-      '113': 'Россия (все регионы)',
-      '66': 'Нижний Новгород',
-      '88': 'Казань',
-      '4': 'Новосибирск',
-      '3': 'Екатеринбург'
-    }
-    return regions[value] || value
+    const map = { '1': 'Москва', '2': 'Санкт-Петербург', '113': 'Россия (все)', '66': 'Нижний Новгород', '88': 'Казань', '4': 'Новосибирск', '3': 'Екатеринбург' }
+    return map[value] || value
   }
   if (key === 'experience') {
-    const experiences = {
-      'noExperience': 'Без опыта',
-      'between1And3': '1-3 года',
-      'between3And6': '3-6 лет',
-      'moreThan6': 'Более 6 лет'
-    }
-    return experiences[value] || value || 'Любой'
+    const map = { noExperience: 'Без опыта', between1And3: '1-3 года', between3And6: '3-6 лет', moreThan6: '>6 лет' }
+    return map[value] || value || 'Любой'
   }
-  return value || 'Не указано'
+  return value || '—'
 }
 </script>
 
 <style lang="scss" scoped>
-@import '../../scss/components/create-task-steps';
+@import '../../scss/main';
 </style>

@@ -21,6 +21,7 @@ from rest_framework.filters import SearchFilter, OrderingFilter
 from src.core.utils.mixins import SwaggerSafeMixin
 from .models import ParsingTask, TaskItem
 from .normalized_models import NormalizedVacancy, VacancyChangeHistory, ParsingStatistics
+from .monitoring_models import TaskRun, ExternalApiEvent
 from .serializers import (
     ParsingTaskListSerializer,
     ParsingTaskDetailSerializer,
@@ -32,6 +33,8 @@ from .serializers import (
     ParsingStatisticsSerializer,
     TaskProgressSerializer,
     TaskControlSerializer,
+    TaskRunListSerializer,
+    ExternalApiEventSerializer,
 )
 from .scheduler import default_scheduler
 from .utils.task_runner import safe_task_run
@@ -440,6 +443,20 @@ class NormalizedVacancyViewSet(SwaggerSafeMixin, viewsets.ReadOnlyModelViewSet):
     ordering_fields = ['created_at', 'updated_at', 'published_at']
     ordering = ['-created_at']
     
+    def get_queryset(self):
+        queryset = super().get_queryset()
+
+        sources_param = self.request.query_params.get('sources')
+        if sources_param:
+            sources = [s.strip() for s in sources_param.split(',') if s.strip()]
+            if sources:
+                q = Q()
+                for src in sources:
+                    q |= Q(sources_meta__contains=[{'source': src}])
+                queryset = queryset.filter(q)
+
+        return queryset
+
     def get_serializer_class(self):
         if self.action == 'list':
             return NormalizedVacancyListSerializer
@@ -532,3 +549,157 @@ class ParsingStatisticsViewSet(SwaggerSafeMixin, viewsets.ReadOnlyModelViewSet):
     
     ordering_fields = ['started_at', 'finished_at', 'items_per_second']
     ordering = ['-started_at']
+
+
+class TaskRunViewSet(SwaggerSafeMixin, viewsets.ReadOnlyModelViewSet):
+    """
+    ViewSet для мониторинга системных celery-задач (TaskRun).
+
+    Endpoints:
+    - GET /api/vacancies_parser/task-runs/ - список запусков
+    - GET /api/vacancies_parser/task-runs/{id}/ - детальная информация
+    """
+
+    queryset = TaskRun.objects.all()
+    serializer_class = TaskRunListSerializer
+    permission_classes = [IsAuthenticated]
+    pagination_class = StandardResultsSetPagination
+    filter_backends = [DjangoFilterBackend, SearchFilter, OrderingFilter]
+    filterset_fields = {
+        'status': ['exact', 'in'],
+        'task_name': ['exact', 'in'],
+        'source': ['exact', 'in'],
+        'started_at': ['gte', 'lte'],
+    }
+    search_fields = ['task_name', 'error_message', 'error_type', 'celery_task_id']
+    ordering_fields = ['started_at', 'updated_at', 'finished_at', 'duration_sec', 'errors', 'http_429', 'timeouts']
+    ordering = ['-started_at']
+
+
+class ExternalApiEventViewSet(SwaggerSafeMixin, viewsets.ReadOnlyModelViewSet):
+    """
+    ViewSet для агрегированных событий деградации внешних API.
+
+    Endpoints:
+    - GET /api/vacancies_parser/external-api-events/ - список событий
+    - GET /api/vacancies_parser/external-api-events/{id}/ - детальная информация
+    """
+
+    queryset = ExternalApiEvent.objects.all()
+    serializer_class = ExternalApiEventSerializer
+    permission_classes = [IsAuthenticated]
+    pagination_class = StandardResultsSetPagination
+    filter_backends = [DjangoFilterBackend, SearchFilter, OrderingFilter]
+    filterset_fields = {
+        'source': ['exact', 'in'],
+        'event_type': ['exact', 'in'],
+        'created_at': ['gte', 'lte'],
+    }
+    search_fields = ['endpoint', 'celery_task_id']
+    ordering_fields = ['created_at', 'count']
+    ordering = ['-created_at']
+
+
+class SystemJobsViewSet(SwaggerSafeMixin, viewsets.ViewSet):
+    """
+    Реестр системных задач (job’ов) и ручной запуск.
+
+    Endpoints:
+    - GET  /api/vacancies_parser/system-jobs/
+    - POST /api/vacancies_parser/system-jobs/{job_id}/run/
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    def list(self, request):
+        return Response({'jobs': self._get_registry()})
+
+    @action(detail=True, methods=['post'], url_path='run')
+    def run(self, request, pk=None):
+        registry = {j['id']: j for j in self._get_registry()}
+        job = registry.get(pk)
+        if not job:
+            return Response({'detail': 'Job not found'}, status=status.HTTP_404_NOT_FOUND)
+
+        kwargs = request.data or {}
+        if job.get('requires_task_id'):
+            task_id = kwargs.get('task_id')
+            try:
+                task_id = int(task_id)
+            except Exception:
+                task_id = None
+            if not task_id:
+                return Response(
+                    {'detail': 'Field "task_id" is required for this job'},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            kwargs['task_id'] = task_id
+        try:
+            from .. import tasks as vacancies_tasks  # noqa: WPS433
+
+            task_func = getattr(vacancies_tasks, job['task_attr'])
+            task_result = safe_task_run(
+                task_func.apply_async,
+                {'kwargs': kwargs} if kwargs else {},
+                prefer_async=True,
+                fallback_to_sync=False,
+            )
+            return Response({'status': 'success', 'celery_task_id': task_result.id})
+        except BrokerUnavailableError as e:
+            return Response(
+                {
+                    'status': 'error',
+                    'message': f'Celery брокер недоступен: {str(e)}',
+                    'broker_error': True,
+                    'suggestion': 'Запустите Celery worker: ergoms start-worker',
+                },
+                status=status.HTTP_503_SERVICE_UNAVAILABLE,
+            )
+        except Exception as e:
+            logger.exception("Ошибка запуска system-job %s", pk)
+            return Response({'status': 'error', 'message': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+    def _get_registry(self):
+        return [
+            {
+                'id': 'release-expired-leases',
+                'title': 'Crash recovery: освобождение зависших leases',
+                'description': 'Освобождает просроченные leases элементов задач.',
+                'celery_task_name': 'vacancies_parser.tasks.release_expired_leases',
+                'task_attr': 'release_expired_leases',
+                'source': None,
+            },
+            {
+                'id': 'monitor-tasks-progress',
+                'title': 'Мониторинг прогресса задач',
+                'description': 'Проверяет running задачи и при необходимости триггерит финализацию.',
+                'celery_task_name': 'vacancies_parser.tasks.monitor_tasks_progress',
+                'task_attr': 'monitor_tasks_progress',
+                'source': None,
+            },
+            {
+                'id': 'cleanup-monitoring-retention',
+                'title': 'Очистка retention мониторинга',
+                'description': 'Удаляет старые TaskRun/ExternalApiEvent.',
+                'celery_task_name': 'vacancies_parser.tasks.cleanup_monitoring_retention',
+                'task_attr': 'cleanup_monitoring_retention',
+                'source': None,
+            },
+            {
+                'id': 'run-deduplication',
+                'title': 'Дедупликация нормализованных вакансий',
+                'description': 'Убирает дубликаты нормализованных вакансий.',
+                'celery_task_name': 'vacancies_parser.tasks.run_deduplication_task',
+                'task_attr': 'run_deduplication_task',
+                'source': None,
+            },
+            {
+                'id': 'rebuild-normalized-for-task',
+                'title': 'Пересборка нормализованных вакансий (по задаче)',
+                'description': 'Пересобирает нормализованные вакансии для указанной ParsingTask.',
+                'celery_task_name': 'vacancies_parser.tasks.rebuild_normalized_vacancies_for_task',
+                'task_attr': 'rebuild_normalized_vacancies_for_task',
+                'source': None,
+                'requires_task_id': True,
+            },
+        ]

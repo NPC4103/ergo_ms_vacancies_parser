@@ -1,5 +1,5 @@
 import { ref, computed } from 'vue'
-import { vacanciesApi } from '../js/vacanciesApi'
+import { vacanciesApi } from '../js/api'
 import { useToast } from 'vue-toastification'
 
 export function useVacancies() {
@@ -20,7 +20,7 @@ export function useVacancies() {
     error.value = null
     
     try {
-      const response = await vacanciesApi.getVacancies({
+      const response = await vacanciesApi.list({
         page: pagination.value.page,
         page_size: pagination.value.pageSize,
         ...params
@@ -53,7 +53,7 @@ export function useVacancies() {
     error.value = null
     
     try {
-      const response = await vacanciesApi.getVacancy(id)
+      const response = await vacanciesApi.get(id)
       return response.data
     } catch (err) {
       error.value = err

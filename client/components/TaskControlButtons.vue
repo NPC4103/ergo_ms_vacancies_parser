@@ -1,75 +1,57 @@
 <template>
-  <div class="vp-task-controls" role="group">
-    <!-- Детали -->
-    <button 
-      class="vp-btn-primary" 
-      :title="'Детали'"
-      @click="goToDetails"
+  <div class="d-flex align-items-center gap-1">
+    <button
+      class="btn btn-sm btn-outline-secondary"
+      @click.stop="$router.push({ name: 'VacanciesParserTaskDetail', params: { id: task.id } })"
+      title="Детали задачи"
     >
-      <Eye :size="16" />
+      <Eye :size="14" />
     </button>
-
-    <!-- Pause -->
-    <button 
-      v-if="task.status === 'running'" 
-      class="vp-btn-warning" 
-      :title="'Приостановить'"
-      @click="$emit('pause', task)"
+    <button
+      v-if="task.status === 'running'"
+      class="btn btn-sm btn-outline-warning"
+      @click.stop="$emit('pause', task.id)"
+      :disabled="loading"
+      title="Приостановить"
     >
-      <Pause :size="16" />
+      <Pause :size="14" />
     </button>
-
-    <!-- Resume -->
-    <button 
-      v-if="task.status === 'paused'" 
-      class="vp-btn-success" 
-      :title="'Возобновить'"
-      @click="$emit('resume', task)"
+    <button
+      v-if="task.status === 'paused'"
+      class="btn btn-sm btn-outline-primary"
+      @click.stop="$emit('resume', task.id)"
+      :disabled="loading"
+      title="Возобновить"
     >
-      <Play :size="16" />
+      <Play :size="14" />
     </button>
-
-    <!-- Stop -->
-    <button 
-      v-if="task.is_active" 
-      class="vp-btn-danger" 
-      :title="'Остановить'"
-      @click="$emit('stop', task)"
+    <button
+      v-if="task.is_active"
+      class="btn btn-sm btn-outline-danger"
+      @click.stop="$emit('stop', task.id)"
+      :disabled="loading"
+      title="Остановить"
     >
-      <Square :size="16" />
+      <Square :size="14" />
     </button>
-
-    <!-- Delete -->
-    <button 
-      v-if="task.is_finished" 
-      class="vp-btn-danger" 
-      :title="'Удалить'"
-      @click="$emit('delete', task)"
+    <button
+      v-if="task.is_finished"
+      class="btn btn-sm btn-outline-danger"
+      @click.stop="$emit('delete', task.id)"
+      :disabled="loading"
+      title="Удалить"
     >
-      <Trash2 :size="16" />
+      <Trash2 :size="14" />
     </button>
   </div>
 </template>
 
 <script setup>
-import { useRouter } from 'vue-router'
 import { Eye, Pause, Play, Square, Trash2 } from 'lucide-vue-next'
 
-const props = defineProps({
-  task: {
-    type: Object,
-    required: true
-  }
+defineProps({
+  task:    { type: Object, required: true },
+  loading: { type: Boolean, default: false }
 })
-
-const emit = defineEmits(['pause', 'resume', 'stop', 'delete'])
-const router = useRouter()
-
-function goToDetails() {
-  router.push(`/vacancies-parser/tasks/${props.task.id}`)
-}
+defineEmits(['pause', 'resume', 'stop', 'delete'])
 </script>
-
-<style lang="scss" scoped>
-@import '../scss/components/task-controls';
-</style>

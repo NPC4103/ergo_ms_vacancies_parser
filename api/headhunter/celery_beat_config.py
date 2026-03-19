@@ -34,46 +34,44 @@ class HeadhunterCeleryBeatConfig(CeleryBeatModuleConfig):
         """
         return {
             # ============================================================
-            # ЕЖЕДНЕВНЫЙ ПАРСИНГ ЗА ВЧЕРА И СЕГОДНЯ (высший приоритет)
+            # ЕЖЕДНЕВНЫЙ ПАРСИНГ (высший приоритет) — новый pipeline
             # ============================================================
             'hh-daily-yesterday-today': {
-                'task': 'modules.vacancies_parser.api.headhunter.tasks.parse_daily_vacancies_yesterday_today',
-                'schedule': crontab(minute=0, hour=2),  # Каждое утро в 02:00
+                'task': 'vacancies_parser.tasks.create_parsing_task',
+                'schedule': crontab(minute=0, hour=2),
+                'args': [
+                    'headhunter',
+                    'api',
+                    {'area': 113, 'pages': 20, 'per_page': 100, 'delay': 1.5},
+                ],
                 'kwargs': {
-                    'area': 113,
-                    'pages': 20,  # Максимальное покрытие
-                    'delay': 1.5,
-                    'get_details': True,
-                    'use_aliases': True,  # Все технологии и их синонимы
-                    'max_queries': None  # Все технологии
+                    'name': 'HH: ежедневный парсинг IT-вакансий',
                 },
                 'options': {
-                    'queue': 'headhunter',
-                    'priority': 10,  # Высший приоритет
-                    'expires': 6 * 60 * 60,  # 6 часов
+                    'queue': 'vacancies_parser',
+                    'priority': 10,
+                    'expires': 6 * 60 * 60,
                 }
             },
-            
+
             # ============================================================
-            # МЕСЯЧНЫЙ ПАРСИНГ С РЕКУРСИВНОЙ СЕГМЕНТАЦИЕЙ
+            # МЕСЯЧНЫЙ ГЛУБОКИЙ ПРОГОН — новый pipeline
             # ============================================================
             'hh-monthly-recursive': {
-                'task': 'modules.vacancies_parser.api.headhunter.tasks.parse_monthly_vacancies_recursive',
-                'schedule': crontab(minute=0, hour=1, day_of_month='1'),  # 1-е число месяца в 01:00
+                'task': 'vacancies_parser.tasks.create_parsing_task',
+                'schedule': crontab(minute=0, hour=1, day_of_month='1'),
+                'args': [
+                    'headhunter',
+                    'api',
+                    {'area': 113, 'pages': 20, 'per_page': 100, 'delay': 1.5, 'text': 'программист'},
+                ],
                 'kwargs': {
-                    'days_back': 30,  # Парсинг за прошедший месяц
-                    'area': 113,
-                    'pages': 20,  # Максимальное покрытие
-                    'delay': 1.5,
-                    'get_details': True,
-                    'use_aliases': True,  # Все технологии и их синонимы
-                    'max_queries': None,  # Все технологии
-                    'parallel_days': 5  # Параллельная обработка по 5 дней
+                    'name': 'HH: ежемесячный глубокий прогон',
                 },
                 'options': {
-                    'queue': 'headhunter',
-                    'priority': 9,  # Высокий приоритет
-                    'expires': 12 * 60 * 60,  # 12 часов
+                    'queue': 'vacancies_parser',
+                    'priority': 9,
+                    'expires': 12 * 60 * 60,
                 }
             },
             

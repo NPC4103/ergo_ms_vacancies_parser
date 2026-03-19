@@ -30,20 +30,21 @@ class HabrCareerCeleryBeatConfig(CeleryBeatModuleConfig):
     def get_beat_schedule(self) -> Dict[str, Dict[str, Any]]:
         return {
             # ============================================================
-            # ЕЖЕДНЕВНЫЙ НОЧНОЙ ПОЛНЫЙ ПРОГОН (после SuperJob 02:00)
-            # Первый ночной запуск дня: 02:30
+            # ЕЖЕДНЕВНЫЙ НОЧНОЙ ПОЛНЫЙ ПРОГОН — новый pipeline
             # ============================================================
             'hc-daily-full-scan': {
-                'task': 'modules.vacancies_parser.api.habr_career.tasks.parse_habr_all_vacancies_task',
+                'task': 'vacancies_parser.tasks.create_parsing_task',
                 'schedule': crontab(minute=30, hour=2),
+                'args': [
+                    'habr_career',
+                    'html',
+                    {'max_pages': 15, 'delay': 1.5},
+                ],
                 'kwargs': {
-                    'pages': 15,
-                    'delay': 1.5,
-                    'get_details': True,
-                    'search_text': None,
+                    'name': 'HC: ежедневный полный прогон',
                 },
                 'options': {
-                    'queue': 'habr_career',
+                    'queue': 'vacancies_parser',
                     'priority': 9,
                     'expires': 6 * 60 * 60,
                 },

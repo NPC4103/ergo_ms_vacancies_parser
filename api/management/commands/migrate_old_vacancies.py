@@ -87,24 +87,14 @@ class Command(BaseCommand):
         total = HHVacancy.objects.count()
         self.stdout.write(f'Всего в vpm_hh_vacancy: {total}')
 
-        existing_ids = set(
-            NormalizedVacancy.objects.filter(source='headhunter').values_list('source_id', flat=True)
-        )
-        self.stdout.write(f'Уже в vpm_vacancy (headhunter): {len(existing_ids)}')
-
-        migrated = 0
-        skipped = 0
+        created = 0
+        updated = 0
         errors = 0
 
         for offset in range(0, total, batch_size):
             vacancies = HHVacancy.objects.all()[offset:offset + batch_size]
-            batch_to_create = []
 
             for vacancy in vacancies:
-                if str(vacancy.hh_id) in existing_ids:
-                    skipped += 1
-                    continue
-
                 try:
                     desc_parts = [vacancy.description or '']
                     if vacancy.requirements:
@@ -112,61 +102,68 @@ class Command(BaseCommand):
                     if vacancy.responsibilities:
                         desc_parts.append(f"\nОбязанности: {vacancy.responsibilities}")
 
-                    normalized = NormalizedVacancy(
-                        source='headhunter',
-                        source_id=str(vacancy.hh_id),
-                        source_url=vacancy.url or '',
-                        parsing_mode='api',
-                        task_item=None,
-                        title=vacancy.title or '',
-                        company_name=vacancy.company_name or '',
-                        company_url=vacancy.company_url or None,
-                        description=''.join(desc_parts) or '',
-                        salary_from=vacancy.salary_from,
-                        salary_to=vacancy.salary_to,
-                        salary_currency=_normalize_currency(vacancy.salary_currency),
-                        salary_gross=vacancy.salary_gross if vacancy.salary_gross is not None else False,
-                        area_name=vacancy.city or '',
-                        address=vacancy.address or '',
-                        experience=vacancy.experience_level or None,
-                        employment_type=_to_list(vacancy.employment_type),
-                        schedule=_to_list(vacancy.schedule_type),
-                        key_skills=vacancy.key_skills if isinstance(vacancy.key_skills, list) else _to_list(vacancy.key_skills),
-                        contacts=None,
-                        is_active=vacancy.is_active,
-                        archived=False,
-                        published_at=vacancy.published_at or timezone.now(),
-                        has_test=vacancy.has_test,
-                        response_letter_required=vacancy.response_letter_required,
-                        source_specific_data={
+                    data = {
+                        'source': 'headhunter',
+                        'source_id': str(vacancy.hh_id),
+                        'source_url': vacancy.url or '',
+                        'parsing_mode': 'api',
+                        'task_item': None,
+                        'title': vacancy.title or '',
+                        'company_name': vacancy.company_name or '',
+                        'company_url': vacancy.company_url or None,
+                        'description': ''.join(desc_parts) or '',
+                        'salary_from': vacancy.salary_from,
+                        'salary_to': vacancy.salary_to,
+                        'salary_currency': _normalize_currency(vacancy.salary_currency),
+                        'salary_gross': vacancy.salary_gross if vacancy.salary_gross is not None else False,
+                        'area_name': vacancy.city or '',
+                        'address': vacancy.address or '',
+                        'experience': vacancy.experience_level or None,
+                        'employment_type': _to_list(vacancy.employment_type),
+                        'schedule': _to_list(vacancy.schedule_type),
+                        'key_skills': vacancy.key_skills if isinstance(vacancy.key_skills, list) else _to_list(vacancy.key_skills),
+                        'contacts': None,
+                        'is_active': vacancy.is_active,
+                        'archived': False,
+                        'published_at': vacancy.published_at or timezone.now(),
+                        'has_test': vacancy.has_test,
+                        'response_letter_required': vacancy.response_letter_required,
+                        'source_specific_data': {
                             'requirements': vacancy.requirements,
                             'responsibilities': vacancy.responsibilities,
                             'employer_id': vacancy.employer_id,
                             'premium': vacancy.premium,
                         },
-                    )
-                    batch_to_create.append(normalized)
-                    migrated += 1
+                    }
+
+                    if dry_run:
+                        created += 1
+                        continue
+
+                    with transaction.atomic():
+                        before = NormalizedVacancy.objects.filter(
+                            source='headhunter',
+                            source_id=data['source_id'],
+                        ).exists()
+                        vacancy_norm = NormalizedVacancy.upsert_from_normalized(data)
+                        after = NormalizedVacancy.objects.filter(
+                            source='headhunter',
+                            source_id=data['source_id'],
+                        ).exists()
+                        if not before and after:
+                            created += 1
+                        else:
+                            updated += 1
                 except Exception as e:
                     logger.error(f'Ошибка миграции HH вакансии {vacancy.id}: {e}')
                     errors += 1
-
-            if batch_to_create and not dry_run:
-                try:
-                    with transaction.atomic():
-                        NormalizedVacancy.objects.bulk_create(batch_to_create, batch_size=batch_size)
-                    for n in batch_to_create:
-                        existing_ids.add(n.source_id)
-                except Exception as e:
-                    logger.error(f'Ошибка сохранения батча: {e}')
-                    errors += len(batch_to_create)
 
             progress = min(offset + batch_size, total)
             if total:
                 self.stdout.write(f'Обработано: {progress}/{total} ({100 * progress // total}%)')
 
         self.stdout.write(self.style.SUCCESS(
-            f'HeadHunter: мигрировано {migrated}, пропущено {skipped}, ошибок {errors}'
+            f'HeadHunter: создано {created}, дополнено {updated}, ошибок {errors}'
         ))
 
     def migrate_habr_career(self, batch_size, dry_run):
@@ -179,75 +176,77 @@ class Command(BaseCommand):
             return
 
         self.stdout.write(f'Всего в vpm_hc_vacancy: {total}')
-        existing_ids = set(
-            NormalizedVacancy.objects.filter(source='habr_career').values_list('source_id', flat=True)
-        )
-        self.stdout.write(f'Уже в vpm_vacancy (habr_career): {len(existing_ids)}')
 
-        migrated = 0
-        skipped = 0
+        created = 0
+        updated = 0
         errors = 0
 
         for offset in range(0, total, batch_size):
             vacancies = HabrVacancy.objects.all()[offset:offset + batch_size]
-            batch_to_create = []
 
             for vacancy in vacancies:
                 sid = str(vacancy.habr_id)
-                if sid in existing_ids:
-                    skipped += 1
-                    continue
 
                 try:
-                    normalized = NormalizedVacancy(
-                        source='habr_career',
-                        source_id=sid,
-                        source_url=vacancy.url or '',
-                        parsing_mode='api',
-                        task_item=None,
-                        title=vacancy.title or '',
-                        company_name=vacancy.company_name or '',
-                        company_url=vacancy.company_url or None,
-                        description=vacancy.description or '',
-                        salary_from=vacancy.salary_from,
-                        salary_to=vacancy.salary_to,
-                        salary_currency=_normalize_currency(vacancy.salary_currency),
-                        salary_gross=vacancy.salary_gross,
-                        area_name=vacancy.city or '',
-                        address=vacancy.address or '',
-                        employment_type=_to_list(vacancy.employment_type),
-                        experience=vacancy.experience_level or None,
-                        schedule=_to_list(vacancy.schedule_type),
-                        key_skills=vacancy.skills if isinstance(vacancy.skills, list) else _to_list(vacancy.skills),
-                        is_active=vacancy.is_active,
-                        archived=False,
-                        published_at=vacancy.published_at or timezone.now(),
-                        has_test=vacancy.has_test,
-                        response_letter_required=vacancy.response_letter_required,
-                        source_specific_data={'requirements': vacancy.requirements, 'responsibilities': vacancy.responsibilities},
-                    )
-                    batch_to_create.append(normalized)
-                    migrated += 1
+                    data = {
+                        'source': 'habr_career',
+                        'source_id': sid,
+                        'source_url': vacancy.url or '',
+                        'parsing_mode': 'api',
+                        'task_item': None,
+                        'title': vacancy.title or '',
+                        'company_name': vacancy.company_name or '',
+                        'company_url': vacancy.company_url or None,
+                        'description': vacancy.description or '',
+                        'salary_from': vacancy.salary_from,
+                        'salary_to': vacancy.salary_to,
+                        'salary_currency': _normalize_currency(vacancy.salary_currency),
+                        'salary_gross': vacancy.salary_gross,
+                        'area_name': vacancy.city or '',
+                        'address': vacancy.address or '',
+                        'employment_type': _to_list(vacancy.employment_type),
+                        'experience': vacancy.experience_level or None,
+                        'schedule': _to_list(vacancy.schedule_type),
+                        'key_skills': vacancy.skills if isinstance(vacancy.skills, list) else _to_list(vacancy.skills),
+                        'is_active': vacancy.is_active,
+                        'archived': False,
+                        'published_at': vacancy.published_at or timezone.now(),
+                        'has_test': vacancy.has_test,
+                        'response_letter_required': vacancy.response_letter_required,
+                        'source_specific_data': {
+                            'requirements': vacancy.requirements,
+                            'responsibilities': vacancy.responsibilities,
+                        },
+                    }
+
+                    if dry_run:
+                        created += 1
+                        continue
+
+                    with transaction.atomic():
+                        before = NormalizedVacancy.objects.filter(
+                            source='habr_career',
+                            source_id=data['source_id'],
+                        ).exists()
+                        vacancy_norm = NormalizedVacancy.upsert_from_normalized(data)
+                        after = NormalizedVacancy.objects.filter(
+                            source='habr_career',
+                            source_id=data['source_id'],
+                        ).exists()
+                        if not before and after:
+                            created += 1
+                        else:
+                            updated += 1
                 except Exception as e:
                     logger.error(f'Ошибка миграции Habr вакансии {vacancy.id}: {e}')
                     errors += 1
-
-            if batch_to_create and not dry_run:
-                try:
-                    with transaction.atomic():
-                        NormalizedVacancy.objects.bulk_create(batch_to_create, batch_size=batch_size)
-                    for n in batch_to_create:
-                        existing_ids.add(n.source_id)
-                except Exception as e:
-                    logger.error(f'Ошибка сохранения батча: {e}')
-                    errors += len(batch_to_create)
 
             progress = min(offset + batch_size, total)
             if total:
                 self.stdout.write(f'Обработано: {progress}/{total} ({100 * progress // total}%)')
 
         self.stdout.write(self.style.SUCCESS(
-            f'Habr Career: мигрировано {migrated}, пропущено {skipped}, ошибок {errors}'
+            f'Habr Career: создано {created}, дополнено {updated}, ошибок {errors}'
         ))
 
     def migrate_superjob(self, batch_size, dry_run):
@@ -260,77 +259,76 @@ class Command(BaseCommand):
             return
 
         self.stdout.write(f'Всего в vpm_sj_vacancy: {total}')
-        existing_ids = set(
-            NormalizedVacancy.objects.filter(source='superjob').values_list('source_id', flat=True)
-        )
-        self.stdout.write(f'Уже в vpm_vacancy (superjob): {len(existing_ids)}')
 
-        migrated = 0
-        skipped = 0
+        created = 0
+        updated = 0
         errors = 0
 
         for offset in range(0, total, batch_size):
             vacancies = SuperJobVacancy.objects.all()[offset:offset + batch_size]
-            batch_to_create = []
 
             for vacancy in vacancies:
                 sid = str(vacancy.superjob_id)
-                if sid in existing_ids:
-                    skipped += 1
-                    continue
 
                 try:
-                    normalized = NormalizedVacancy(
-                        source='superjob',
-                        source_id=sid,
-                        source_url=vacancy.url or '',
-                        parsing_mode='api',
-                        task_item=None,
-                        title=vacancy.title or '',
-                        company_name=vacancy.company_name or '',
-                        company_url=vacancy.company_url or None,
-                        description=vacancy.description or '',
-                        salary_from=vacancy.salary_from,
-                        salary_to=vacancy.salary_to,
-                        salary_currency=_normalize_currency(vacancy.salary_currency),
-                        salary_gross=vacancy.salary_gross if vacancy.salary_gross is not None else False,
-                        area_name=vacancy.city or '',
-                        address=vacancy.address or '',
-                        employment_type=_to_list(vacancy.employment_type),
-                        experience=vacancy.experience_level or None,
-                        schedule=_to_list(vacancy.schedule_type),
-                        key_skills=vacancy.key_skills if isinstance(vacancy.key_skills, list) else _to_list(vacancy.key_skills),
-                        is_active=vacancy.is_active,
-                        archived=False,
-                        published_at=vacancy.published_at or timezone.now(),
-                        has_test=vacancy.has_test,
-                        response_letter_required=vacancy.response_letter_required,
-                        source_specific_data={
+                    data = {
+                        'source': 'superjob',
+                        'source_id': sid,
+                        'source_url': vacancy.url or '',
+                        'parsing_mode': 'api',
+                        'task_item': None,
+                        'title': vacancy.title or '',
+                        'company_name': vacancy.company_name or '',
+                        'company_url': vacancy.company_url or None,
+                        'description': vacancy.description or '',
+                        'salary_from': vacancy.salary_from,
+                        'salary_to': vacancy.salary_to,
+                        'salary_currency': _normalize_currency(vacancy.salary_currency),
+                        'salary_gross': vacancy.salary_gross if vacancy.salary_gross is not None else False,
+                        'area_name': vacancy.city or '',
+                        'address': vacancy.address or '',
+                        'employment_type': _to_list(vacancy.employment_type),
+                        'experience': vacancy.experience_level or None,
+                        'schedule': _to_list(vacancy.schedule_type),
+                        'key_skills': vacancy.key_skills if isinstance(vacancy.key_skills, list) else _to_list(vacancy.key_skills),
+                        'is_active': vacancy.is_active,
+                        'archived': False,
+                        'published_at': vacancy.published_at or timezone.now(),
+                        'has_test': vacancy.has_test,
+                        'response_letter_required': vacancy.response_letter_required,
+                        'source_specific_data': {
                             'requirements': getattr(vacancy, 'requirements', None),
                             'responsibilities': getattr(vacancy, 'responsibilities', None),
                             'employer_id': getattr(vacancy, 'employer_id', None),
                         },
-                    )
-                    batch_to_create.append(normalized)
-                    migrated += 1
+                    }
+
+                    if dry_run:
+                        created += 1
+                        continue
+
+                    with transaction.atomic():
+                        before = NormalizedVacancy.objects.filter(
+                            source='superjob',
+                            source_id=data['source_id'],
+                        ).exists()
+                        vacancy_norm = NormalizedVacancy.upsert_from_normalized(data)
+                        after = NormalizedVacancy.objects.filter(
+                            source='superjob',
+                            source_id=data['source_id'],
+                        ).exists()
+                        if not before and after:
+                            created += 1
+                        else:
+                            updated += 1
                 except Exception as e:
                     logger.error(f'Ошибка миграции SuperJob вакансии {vacancy.id}: {e}')
                     errors += 1
-
-            if batch_to_create and not dry_run:
-                try:
-                    with transaction.atomic():
-                        NormalizedVacancy.objects.bulk_create(batch_to_create, batch_size=batch_size)
-                    for n in batch_to_create:
-                        existing_ids.add(n.source_id)
-                except Exception as e:
-                    logger.error(f'Ошибка сохранения батча: {e}')
-                    errors += len(batch_to_create)
 
             progress = min(offset + batch_size, total)
             if total:
                 self.stdout.write(f'Обработано: {progress}/{total} ({100 * progress // total}%)')
 
         self.stdout.write(self.style.SUCCESS(
-            f'SuperJob: мигрировано {migrated}, пропущено {skipped}, ошибок {errors}'
+            f'SuperJob: создано {created}, дополнено {updated}, ошибок {errors}'
         ))

@@ -1,684 +1,310 @@
-<script setup>
-import { ref, onMounted, computed } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
-import { ArrowLeft, MapPin, DollarSign, Calendar, Briefcase, ExternalLink, History, RefreshCw, Building2 } from 'lucide-vue-next'
-import { useVacancies } from '../composables/useVacancies'
-import { vacanciesApi } from '../js/vacanciesApi'
-import { useToast } from 'vue-toastification'
-import ConfirmDialog from '@/components/ConfirmDialog.vue'
-
-const route = useRoute()
-const router = useRouter()
-const toast = useToast()
-
-const { loadVacancy, loading } = useVacancies()
-
-const vacancy = ref(null)
-const versions = ref([])
-const showVersions = ref(false)
-const showConfirmDialog = ref(false)
-
-const SOURCE_LABELS = {
-  headhunter: 'HeadHunter',
-  habr_career: 'Habr Career',
-  superjob: 'SuperJob'
-}
-
-const vacancySource = computed(() => vacancy.value?.source || '')
-
-const sourceLabel = computed(() =>
-  SOURCE_LABELS[vacancySource.value] || vacancySource.value
-)
-
-const formatSalary = (v) => {
-  if (!v) return null
-  return v.salary_display || null
-}
-
-const formatDate = (dateString) => {
-  if (!dateString) return ''
-  const date = new Date(dateString)
-  return date.toLocaleDateString('ru-RU', {
-    year: 'numeric',
-    month: 'long',
-    day: 'numeric'
-  })
-}
-
-const loadVacancyData = async () => {
-  try {
-    vacancy.value = await loadVacancy(route.params.id)
-  } catch (err) {
-    toast.error('Ошибка при загрузке вакансии')
-  }
-}
-
-const loadVersions = async () => {
-  if (!vacancy.value) return
-  try {
-    const response = await vacanciesApi.getVersions(vacancySource.value, route.params.id)
-    versions.value = response.data
-  } catch (err) {
-    toast.error('Ошибка при загрузке версий')
-  }
-}
-
-const handleParse = async () => {
-  showConfirmDialog.value = true
-}
-
-const confirmParse = async () => {
-  showConfirmDialog.value = false
-  if (!vacancy.value) return
-
-  const source = vacancySource.value
-  try {
-    const result = await vacanciesApi.getDetails(source, {
-      vacancy_id: vacancy.value.source_id
-    })
-    toast.success('Обновление вакансии запущено')
-
-    const checkStatus = setInterval(async () => {
-      try {
-        const status = await vacanciesApi.getTaskStatus(source, result.data.task_id)
-        if (status.data.status === 'SUCCESS' || status.data.status === 'FAILURE') {
-          clearInterval(checkStatus)
-          if (status.data.status === 'SUCCESS') {
-            toast.success('Вакансия обновлена')
-            loadVacancyData()
-          } else {
-            toast.error('Ошибка при парсинге')
-          }
-        }
-      } catch (err) {
-        clearInterval(checkStatus)
-      }
-    }, 2000)
-  } catch (err) {
-    toast.error('Ошибка при запуске парсинга')
-  }
-}
-
-onMounted(() => {
-  loadVacancyData()
-})
-</script>
-
 <template>
-  <div class="vacancy-detail-view">
-    <div class="detail-header">
-      <button 
-        @click="router.go(-1)" 
-        class="btn-back"
-      >
-        <ArrowLeft :size="20" />
-      </button>
-      <div class="header-actions">
-        <button 
-          v-if="vacancy"
-          @click="handleParse" 
-          class="btn-refresh"
-          :disabled="loading"
-        >
-          <RefreshCw :size="18" />
-          Обновить
+  <div class="vp-page p-4">
+    <StateLoading v-if="loading && !vacancy" text="Загрузка вакансии..." />
+    <StateError v-else-if="error && !vacancy" :message="error" @retry="loadVacancy" />
+
+    <div v-else-if="vacancy">
+      <div class="mb-4">
+        <button class="btn btn-link btn-sm p-0 text-secondary mb-2 d-flex align-items-center gap-1 text-decoration-none" @click="$router.push({ name: 'VacanciesList' })">
+          <ArrowLeft :size="14" />
+          К списку вакансий
         </button>
-      </div>
-    </div>
-
-    <div v-if="loading" class="loading-state">
-      <div class="spinner"></div>
-    </div>
-
-    <div v-else-if="vacancy" class="detail-content">
-      <!-- Основная информация -->
-      <div class="detail-main">
-        <div class="vacancy-header">
-          <div class="vacancy-title-section">
-            <h1 class="vacancy-title">
-              {{ vacancy.title }}
-              <span v-if="vacancy.premium" class="premium-badge">Premium</span>
-            </h1>
-            <div class="vacancy-company">
-              <Building2 :size="18" />
-              <span>{{ vacancy.company_name }}</span>
-            </div>
+        <div class="d-flex align-items-start justify-content-between gap-3 flex-wrap">
+          <div class="min-w-0">
+            <h2 class="fw-bold mb-1" style="font-size:1.375rem;">{{ vacancy.title }}</h2>
+            <div class="text-secondary fw-medium fs-6">{{ vacancy.company_name }}</div>
           </div>
-          <a 
-            v-if="vacancy.source_url"
-            :href="vacancy.source_url" 
-            target="_blank"
-            class="btn-external"
+          <button
+            class="btn btn-outline-primary btn-sm d-flex align-items-center gap-1 flex-shrink-0"
+            @click="refreshVacancy"
+            :disabled="refreshing"
           >
-            <ExternalLink :size="18" />
-            На {{ sourceLabel }}
-          </a>
-        </div>
-
-        <!-- Мета-информация -->
-        <div class="vacancy-meta-grid">
-          <div v-if="formatSalary(vacancy)" class="meta-item salary">
-            <DollarSign :size="20" />
-            <div>
-              <div class="meta-label">Зарплата</div>
-              <div class="meta-value">{{ formatSalary(vacancy) }}</div>
-            </div>
-          </div>
-          <div v-if="vacancy.area_name" class="meta-item">
-            <MapPin :size="20" />
-            <div>
-              <div class="meta-label">Город</div>
-              <div class="meta-value">{{ vacancy.area_name }}</div>
-            </div>
-          </div>
-          <div v-if="vacancy.employment_type && vacancy.employment_type.length" class="meta-item">
-            <Briefcase :size="20" />
-            <div>
-              <div class="meta-label">Тип занятости</div>
-              <div class="meta-value">{{ Array.isArray(vacancy.employment_type) ? vacancy.employment_type.join(', ') : vacancy.employment_type }}</div>
-            </div>
-          </div>
-          <div v-if="vacancy.experience" class="meta-item">
-            <div>
-              <div class="meta-label">Опыт</div>
-              <div class="meta-value">{{ vacancy.experience }}</div>
-            </div>
-          </div>
-          <div class="meta-item">
-            <Calendar :size="20" />
-            <div>
-              <div class="meta-label">Опубликовано</div>
-              <div class="meta-value">{{ formatDate(vacancy.published_at) }}</div>
-            </div>
-          </div>
-        </div>
-
-        <!-- Описание -->
-        <div v-if="vacancy.description" class="content-section">
-          <h3 class="section-title">Описание</h3>
-          <div class="content-text" v-html="vacancy.description.replace(/\n/g, '<br>')"></div>
-        </div>
-
-        <!-- Требования -->
-        <div v-if="vacancy.requirements" class="content-section">
-          <h3 class="section-title">Требования</h3>
-          <div class="content-text" v-html="vacancy.requirements.replace(/\n/g, '<br>')"></div>
-        </div>
-
-        <!-- Обязанности -->
-        <div v-if="vacancy.responsibilities" class="content-section">
-          <h3 class="section-title">Обязанности</h3>
-          <div class="content-text" v-html="vacancy.responsibilities.replace(/\n/g, '<br>')"></div>
-        </div>
-
-        <!-- Навыки -->
-        <div v-if="vacancy.key_skills && vacancy.key_skills.length > 0" class="content-section">
-          <h3 class="section-title">Ключевые навыки</h3>
-          <div class="skills-list">
-            <span 
-              v-for="skill in vacancy.key_skills" 
-              :key="skill"
-              class="skill-badge"
-            >
-              {{ skill }}
-            </span>
-          </div>
+            <span v-if="refreshing" class="spinner-border spinner-border-sm"></span>
+            <RefreshCw v-else :size="14" />
+            Обновить данные
+          </button>
         </div>
       </div>
 
-      <!-- Боковая панель -->
-      <aside class="detail-sidebar">
-        <div class="sidebar-card">
-          <h4 class="sidebar-title">Информация</h4>
-          <div class="sidebar-info">
-            <div class="info-item">
-              <span class="info-label">Источник</span>
-              <span class="info-value">{{ sourceLabel }}</span>
+      <div class="row g-4">
+        <!-- Основной контент -->
+        <div class="col-lg-8">
+          <!-- Ключевые данные -->
+          <div class="vp-card p-3 mb-3">
+            <div class="row g-3">
+              <div class="col-sm-6" v-if="vacancy.salary_from || vacancy.salary_to">
+                <div class="text-secondary mb-1" style="font-size:0.75rem;">Зарплата</div>
+                <div class="vp-salary">
+                  {{ formatSalary(vacancy.salary_from, vacancy.salary_to, vacancy.salary_currency) }}
+                </div>
+              </div>
+              <div class="col-sm-6" v-if="vacancy.city">
+                <div class="text-secondary mb-1" style="font-size:0.75rem;">Город</div>
+                <div class="d-flex align-items-center gap-1 fw-medium">
+                  <MapPin :size="14" class="text-secondary" />
+                  {{ vacancy.city }}
+                </div>
+              </div>
+              <div class="col-sm-6" v-if="vacancy.employment_type">
+                <div class="text-secondary mb-1" style="font-size:0.75rem;">Тип занятости</div>
+                <div class="d-flex align-items-center gap-1 fw-medium">
+                  <Clock :size="14" class="text-secondary" />
+                  {{ vacancy.employment_type }}
+                </div>
+              </div>
+              <div class="col-sm-6" v-if="vacancy.experience">
+                <div class="text-secondary mb-1" style="font-size:0.75rem;">Опыт работы</div>
+                <div class="d-flex align-items-center gap-1 fw-medium">
+                  <Briefcase :size="14" class="text-secondary" />
+                  {{ vacancy.experience }}
+                </div>
+              </div>
             </div>
-            <div class="info-item">
-              <span class="info-label">ID на источнике</span>
-              <span class="info-value">{{ vacancy.source_id }}</span>
+          </div>
+
+          <!-- Навыки -->
+          <div class="vp-card p-3 mb-3" v-if="vacancy.skills?.length">
+            <h6 class="fw-semibold mb-2">Ключевые навыки</h6>
+            <div class="vp-skills-list">
+              <span v-for="skill in vacancy.skills" :key="skill" class="vp-skill-tag">{{ skill }}</span>
             </div>
-            <div v-if="vacancy.current_version" class="info-item">
-              <span class="info-label">Версия</span>
-              <span class="info-value">{{ vacancy.current_version }}</span>
+          </div>
+
+          <!-- Описание accordion -->
+          <div class="vp-card p-0 mb-3" v-if="vacancy.description || vacancy.requirements || vacancy.responsibilities">
+            <div class="accordion" id="vacancyAccordion">
+              <div v-if="vacancy.description" class="accordion-item border-0">
+                <h6 class="accordion-header">
+                  <button class="accordion-button fw-semibold py-2 px-3" type="button" data-bs-toggle="collapse" data-bs-target="#accDescription">
+                    <FileText :size="15" class="me-2 text-primary" />Описание
+                  </button>
+                </h6>
+                <div id="accDescription" class="accordion-collapse collapse show">
+                  <div class="accordion-body pt-0">
+                    <div class="vacancy-html-content" v-html="vacancy.description"></div>
+                  </div>
+                </div>
+              </div>
+              <div v-if="vacancy.requirements" class="accordion-item border-0 border-top">
+                <h6 class="accordion-header">
+                  <button class="accordion-button collapsed fw-semibold py-2 px-3" type="button" data-bs-toggle="collapse" data-bs-target="#accRequirements">
+                    <CheckSquare :size="15" class="me-2 text-success" />Требования
+                  </button>
+                </h6>
+                <div id="accRequirements" class="accordion-collapse collapse">
+                  <div class="accordion-body pt-0">
+                    <div class="vacancy-html-content" v-html="vacancy.requirements"></div>
+                  </div>
+                </div>
+              </div>
+              <div v-if="vacancy.responsibilities" class="accordion-item border-0 border-top">
+                <h6 class="accordion-header">
+                  <button class="accordion-button collapsed fw-semibold py-2 px-3" type="button" data-bs-toggle="collapse" data-bs-target="#accResponsibilities">
+                    <ListChecks :size="15" class="me-2 text-info" />Обязанности
+                  </button>
+                </h6>
+                <div id="accResponsibilities" class="accordion-collapse collapse">
+                  <div class="accordion-body pt-0">
+                    <div class="vacancy-html-content" v-html="vacancy.responsibilities"></div>
+                  </div>
+                </div>
+              </div>
             </div>
-            <div class="info-item">
-              <span class="info-label">Статус</span>
-              <span :class="`status-badge ${vacancy.is_active ? 'active' : 'inactive'}`">
-                {{ vacancy.is_active ? 'Активна' : 'Неактивна' }}
-              </span>
+          </div>
+
+          <!-- История изменений -->
+          <div class="vp-card p-3">
+            <div class="d-flex align-items-center justify-content-between mb-3">
+              <h6 class="fw-semibold mb-0 d-flex align-items-center gap-2">
+                <History :size="16" class="text-secondary" />
+                История изменений
+              </h6>
+              <button
+                class="btn btn-link btn-sm p-0 text-secondary text-decoration-none"
+                @click="loadChanges"
+                :disabled="loadingChanges"
+                v-if="!changes"
+              >
+                Загрузить
+              </button>
             </div>
-            <div v-if="vacancy.company_name" class="info-item">
-              <span class="info-label">Работодатель</span>
-              <span class="info-value">{{ vacancy.company_name }}</span>
+            <div v-if="loadingChanges" class="vp-loading-state py-3">
+              <div class="vp-spinner"></div>
+              <span>Загрузка...</span>
             </div>
+            <div v-else-if="changes && changes.length === 0" class="text-secondary small">
+              Изменений не найдено
+            </div>
+            <div v-else-if="changes">
+              <div v-for="change in changes" :key="change.id" class="vp-timeline-item">
+                <div class="vp-timeline-dot" :class="`dot-${changeColor(change.change_type)}`"></div>
+                <div class="d-flex align-items-center gap-2 mb-1">
+                  <small class="fw-semibold">{{ change.change_type_display || change.change_type }}</small>
+                  <small class="text-secondary">{{ formatDate(change.detected_at) }}</small>
+                </div>
+                <div v-if="change.changed_fields?.length" class="d-flex flex-wrap gap-1">
+                  <span v-for="field in change.changed_fields" :key="field" class="badge bg-secondary bg-opacity-10 text-body" style="font-size:0.7rem;">{{ field }}</span>
+                </div>
+              </div>
+            </div>
+            <p v-else class="text-secondary small mb-0">Нажмите «Загрузить» для просмотра истории</p>
           </div>
         </div>
 
-        <div class="sidebar-card">
-          <div class="sidebar-header">
-            <h4 class="sidebar-title">
-              <History :size="18" />
-              Версии
-            </h4>
-            <button 
-              @click="showVersions = !showVersions; showVersions && loadVersions()"
-              class="btn-toggle"
-            >
-              {{ showVersions ? 'Скрыть' : 'Показать' }}
-            </button>
+        <!-- Sidebar -->
+        <div class="col-lg-4">
+          <div class="vp-card p-3 mb-3">
+            <h6 class="fw-semibold mb-3">Метаданные</h6>
+            <ul class="list-group list-group-flush">
+              <li class="list-group-item px-0 py-2 small d-flex justify-content-between align-items-center">
+                <span class="text-secondary">Источник</span>
+                <span class="badge vp-pill-badge vp-pill-badge-source">{{ sourceLabel(vacancy.source) }}</span>
+              </li>
+              <li v-if="vacancy.source_id" class="list-group-item px-0 py-2 small">
+                <span class="text-secondary d-block mb-1">Source ID</span>
+                <code style="font-size:0.75rem;">{{ vacancy.source_id }}</code>
+              </li>
+              <li class="list-group-item px-0 py-2 small d-flex justify-content-between align-items-center">
+                <span class="text-secondary">Статус</span>
+                <span class="badge vp-pill-badge" :class="statusBadgeClass(vacancy.status)">{{ vacancy.status }}</span>
+              </li>
+              <li class="list-group-item px-0 py-2 small d-flex justify-content-between align-items-center">
+                <span class="text-secondary">Версия</span>
+                <span class="fw-medium">{{ vacancy.current_version || '—' }}</span>
+              </li>
+              <li class="list-group-item px-0 py-2 small d-flex justify-content-between align-items-center">
+                <span class="text-secondary">Опубликована</span>
+                <span>{{ formatDate(vacancy.published_at) }}</span>
+              </li>
+              <li class="list-group-item px-0 py-2 small d-flex justify-content-between align-items-center">
+                <span class="text-secondary">Обновлена</span>
+                <span>{{ formatDate(vacancy.updated_at) }}</span>
+              </li>
+            </ul>
           </div>
-          <div v-if="showVersions" class="versions-list">
-            <div v-if="versions.length === 0" class="empty-text">
-              Нет версий
-            </div>
-            <div 
-              v-for="version in versions" 
-              :key="version.id"
-              class="version-item"
-            >
-              <div class="version-header">
-                <span class="version-number">Версия {{ version.version_number }}</span>
-                <span class="version-date">{{ formatDate(version.created_at) }}</span>
-              </div>
-              <div v-if="version.change_summary" class="version-summary">
-                {{ version.change_summary }}
-              </div>
-            </div>
+
+          <div class="vp-card p-3" v-if="vacancy.url">
+            <h6 class="fw-semibold mb-2">Ссылки</h6>
+            <a :href="vacancy.url" target="_blank" rel="noopener" class="btn btn-outline-primary btn-sm w-100 d-flex align-items-center justify-content-center gap-1">
+              <ExternalLink :size="14" />
+              Открыть на сайте
+            </a>
           </div>
         </div>
-      </aside>
+      </div>
     </div>
-
-    <!-- Диалог подтверждения -->
-    <ConfirmDialog
-      :show="showConfirmDialog"
-      title="Обновить данные вакансии?"
-      :message="`Это запустит парсинг вакансии с ${sourceLabel} и обновит данные в базе.`"
-      confirm-text="Обновить"
-      cancel-text="Отмена"
-      @confirm="confirmParse"
-      @close="showConfirmDialog = false"
-      @cancel="showConfirmDialog = false"
-    />
   </div>
 </template>
 
+<script setup>
+import { ref, onMounted } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
+import { ArrowLeft, RefreshCw, MapPin, Clock, Briefcase, FileText, CheckSquare, ListChecks, History, ExternalLink } from 'lucide-vue-next'
+import { useToast } from 'vue-toastification'
+import { vacanciesApi, sourceApi } from '../js/api'
+import StateLoading from '../components/StateLoading.vue'
+import StateError from '../components/StateError.vue'
+
+const route  = useRoute()
+const router = useRouter()
+const toast  = useToast()
+
+const vacancy = ref(null)
+const changes = ref(null)
+const loading = ref(false)
+const loadingChanges = ref(false)
+const refreshing = ref(false)
+const error = ref(null)
+
+function sourceLabel(s) { return { headhunter: 'HeadHunter', superjob: 'SuperJob', habr_career: 'Habr Career' }[s] || s }
+function formatSalary(from, to, currency = 'RUB') {
+  const c = currency === 'RUB' ? '₽' : currency
+  if (from && to) return `${from.toLocaleString()} – ${to.toLocaleString()} ${c}`
+  if (from) return `от ${from.toLocaleString()} ${c}`
+  if (to) return `до ${to.toLocaleString()} ${c}`
+  return ''
+}
+function formatDate(d) {
+  if (!d) return '—'
+  return new Date(d).toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' })
+}
+function changeColor(type) {
+  const map = { created: 'success', updated: 'primary', deleted: 'danger', status_changed: 'warning' }
+  return map[type] || 'info'
+}
+
+function statusBadgeClass(status) {
+  const map = { active: 'vp-pill-badge-success', inactive: 'vp-pill-badge-neutral' }
+  return map[status] || 'vp-pill-badge-neutral'
+}
+
+async function loadVacancy() {
+  loading.value = true
+  error.value = null
+  try {
+    const r = await vacanciesApi.get(route.params.id)
+    vacancy.value = r.data || r
+  } catch (e) {
+    error.value = e.message || 'Ошибка загрузки вакансии'
+  } finally {
+    loading.value = false
+  }
+}
+
+async function loadChanges() {
+  loadingChanges.value = true
+  try {
+    const r = await vacanciesApi.getChanges(route.params.id)
+    const data = r.data
+    changes.value = Array.isArray(data?.results) ? data.results : (Array.isArray(data) ? data : [])
+  } catch (e) {
+    toast.error('Ошибка загрузки истории')
+  } finally {
+    loadingChanges.value = false
+  }
+}
+
+async function refreshVacancy() {
+  if (!vacancy.value?.source) return
+  refreshing.value = true
+  try {
+    const r = await sourceApi.getDetails(vacancy.value.source, { source_id: vacancy.value.source_id })
+    const taskId = r.data?.task_id
+    if (taskId) {
+      toast.info('Обновление запущено...')
+      const checkStatus = async () => {
+        const s = await sourceApi.getTaskStatus(vacancy.value.source, taskId)
+        if (s.data?.status === 'SUCCESS') {
+          await loadVacancy()
+          toast.success('Вакансия обновлена')
+        } else if (['FAILURE', 'REVOKED'].includes(s.data?.status)) {
+          toast.error('Ошибка обновления')
+        } else {
+          setTimeout(checkStatus, 2000)
+        }
+      }
+      checkStatus()
+    } else {
+      await loadVacancy()
+      toast.success('Вакансия обновлена')
+    }
+  } catch (e) {
+    toast.error('Ошибка обновления вакансии')
+  } finally {
+    refreshing.value = false
+  }
+}
+
+onMounted(loadVacancy)
+</script>
+
 <style lang="scss" scoped>
-.vacancy-detail-view {
-  .detail-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 2rem;
-    
-    .btn-back {
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      width: 40px;
-      height: 40px;
-      border: 1px solid var(--bs-border-color, #e9ecef);
-      background: var(--bs-body-bg, #fff);
-      border-radius: 8px;
-      cursor: pointer;
-      transition: all 0.2s ease;
-      color: var(--bs-body-color, #212529);
-      
-      &:hover {
-        border-color: var(--bs-primary, #0d6efd);
-        color: var(--bs-primary, #0d6efd);
-        background: rgba(13, 110, 253, 0.05);
-      }
-    }
-    
-    .btn-refresh {
-      display: flex;
-      align-items: center;
-      gap: 0.5rem;
-      padding: 0.625rem 1.25rem;
-      border: 1px solid var(--bs-border-color, #e9ecef);
-      background: var(--bs-body-bg, #fff);
-      border-radius: 8px;
-      color: var(--bs-body-color, #212529);
-      font-size: 0.9375rem;
-      cursor: pointer;
-      transition: all 0.2s ease;
-      
-      &:hover:not(:disabled) {
-        border-color: var(--bs-primary, #0d6efd);
-        color: var(--bs-primary, #0d6efd);
-        background: rgba(13, 110, 253, 0.05);
-      }
-      
-      &:disabled {
-        opacity: 0.6;
-        cursor: not-allowed;
-      }
-    }
-  }
-  
-  .detail-content {
-    display: grid;
-    grid-template-columns: 1fr 320px;
-    gap: 2rem;
-  }
-  
-  .detail-main {
-    .vacancy-header {
-      display: flex;
-      justify-content: space-between;
-      align-items: flex-start;
-      gap: 1.5rem;
-      margin-bottom: 2rem;
-      padding-bottom: 2rem;
-      border-bottom: 1px solid var(--bs-border-color, #e9ecef);
-      
-      .vacancy-title-section {
-        flex: 1;
-        
-        .vacancy-title {
-          font-size: 1.75rem;
-          font-weight: 600;
-          margin: 0 0 1rem 0;
-          color: var(--bs-body-color, #212529);
-          line-height: 1.3;
-          letter-spacing: -0.02em;
-          display: flex;
-          align-items: center;
-          gap: 0.75rem;
-          flex-wrap: wrap;
-          
-          .premium-badge {
-            padding: 0.25rem 0.75rem;
-            background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
-            color: white;
-            border-radius: 6px;
-            font-size: 0.75rem;
-            font-weight: 600;
-          }
-        }
-        
-        .vacancy-company {
-          display: flex;
-          align-items: center;
-          gap: 0.5rem;
-          font-size: 1rem;
-          color: var(--bs-secondary-color, #6c757d);
-        }
-      }
-      
-      .btn-external {
-        display: flex;
-        align-items: center;
-        gap: 0.5rem;
-        padding: 0.625rem 1.25rem;
-        border: 1px solid var(--bs-border-color, #e9ecef);
-        border-radius: 8px;
-        color: var(--bs-body-color, #212529);
-        text-decoration: none;
-        font-size: 0.9375rem;
-        transition: all 0.2s ease;
-        flex-shrink: 0;
-        
-        &:hover {
-          border-color: var(--bs-primary, #0d6efd);
-          color: var(--bs-primary, #0d6efd);
-          background: rgba(13, 110, 253, 0.05);
-        }
-      }
-    }
-    
-    .vacancy-meta-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-      gap: 1.5rem;
-      margin-bottom: 2.5rem;
-      
-      .meta-item {
-        display: flex;
-        align-items: flex-start;
-        gap: 0.75rem;
-        padding: 1rem;
-        background: var(--bs-secondary-bg, #f8f9fa);
-        border-radius: 10px;
-        
-        svg {
-          color: var(--bs-secondary-color, #6c757d);
-          flex-shrink: 0;
-          margin-top: 2px;
-        }
-        
-        .meta-label {
-          font-size: 0.8125rem;
-          color: var(--bs-secondary-color, #6c757d);
-          margin-bottom: 0.25rem;
-          font-weight: 500;
-        }
-        
-        .meta-value {
-          font-size: 0.9375rem;
-          color: var(--bs-body-color, #212529);
-          font-weight: 500;
-        }
-        
-        &.salary {
-          .meta-value {
-            color: var(--bs-success, #198754);
-            font-weight: 600;
-          }
-          
-          svg {
-            color: var(--bs-success, #198754);
-          }
-        }
-      }
-    }
-    
-    .content-section {
-      margin-bottom: 2.5rem;
-      
-      .section-title {
-        font-size: 1.25rem;
-        font-weight: 600;
-        margin: 0 0 1rem 0;
-        color: var(--bs-body-color, #212529);
-        letter-spacing: -0.01em;
-      }
-      
-      .content-text {
-        font-size: 0.9375rem;
-        line-height: 1.7;
-        color: var(--bs-body-color, #212529);
-        white-space: pre-wrap;
-      }
-      
-      .skills-list {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 0.75rem;
-        
-        .skill-badge {
-          padding: 0.5rem 1rem;
-          background: var(--bs-primary-bg-subtle, #cfe2ff);
-          border: 1px solid var(--bs-primary-border-subtle, #9ec5fe);
-          border-radius: 8px;
-          font-size: 0.875rem;
-          color: var(--bs-primary, #0d6efd);
-          font-weight: 500;
-        }
-      }
-    }
-  }
-  
-  .detail-sidebar {
-    .sidebar-card {
-      padding: 1.5rem;
-      background: var(--bs-body-bg, #fff);
-      border: 1px solid var(--bs-border-color, #e9ecef);
-      border-radius: 12px;
-      margin-bottom: 1.5rem;
-      
-      .sidebar-header {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        margin-bottom: 1.25rem;
-      }
-      
-      .sidebar-title {
-        font-size: 1rem;
-        font-weight: 600;
-        margin: 0;
-        color: var(--bs-body-color, #212529);
-        display: flex;
-        align-items: center;
-        gap: 0.5rem;
-      }
-      
-      .btn-toggle {
-        padding: 0.375rem 0.75rem;
-        border: 1px solid var(--bs-border-color, #e9ecef);
-        background: var(--bs-body-bg, #fff);
-        border-radius: 6px;
-        color: var(--bs-body-color, #212529);
-        font-size: 0.875rem;
-        cursor: pointer;
-        transition: all 0.2s ease;
-        
-        &:hover {
-          border-color: var(--bs-primary, #0d6efd);
-          color: var(--bs-primary, #0d6efd);
-        }
-      }
-      
-      .sidebar-info {
-        display: flex;
-        flex-direction: column;
-        gap: 1rem;
-        
-        .info-item {
-          display: flex;
-          flex-direction: column;
-          gap: 0.25rem;
-          
-          .info-label {
-            font-size: 0.8125rem;
-            color: var(--bs-secondary-color, #6c757d);
-            font-weight: 500;
-          }
-          
-          .info-value {
-            font-size: 0.9375rem;
-            color: var(--bs-body-color, #212529);
-            font-weight: 500;
-          }
-          
-          .status-badge {
-            display: inline-block;
-            padding: 0.25rem 0.75rem;
-            border-radius: 6px;
-            font-size: 0.8125rem;
-            font-weight: 600;
-            
-            &.active {
-              background: var(--bs-success-bg-subtle, #d1e7dd);
-              color: var(--bs-success, #198754);
-            }
-            
-            &.inactive {
-              background: var(--bs-secondary-bg, #f8f9fa);
-              color: var(--bs-secondary-color, #6c757d);
-            }
-          }
-        }
-      }
-      
-      .versions-list {
-        display: flex;
-        flex-direction: column;
-        gap: 1rem;
-        
-        .empty-text {
-          font-size: 0.875rem;
-          color: var(--bs-secondary-color, #6c757d);
-          text-align: center;
-          padding: 1rem 0;
-        }
-        
-        .version-item {
-          padding: 1rem;
-          background: var(--bs-secondary-bg, #f8f9fa);
-          border-radius: 8px;
-          
-          .version-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 0.5rem;
-            
-            .version-number {
-              font-size: 0.875rem;
-              font-weight: 600;
-              color: var(--bs-body-color, #212529);
-            }
-            
-            .version-date {
-              font-size: 0.8125rem;
-              color: var(--bs-secondary-color, #6c757d);
-            }
-          }
-          
-          .version-summary {
-            font-size: 0.8125rem;
-            color: var(--bs-secondary-color, #6c757d);
-          }
-        }
-      }
-    }
-  }
-  
-  .loading-state {
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    padding: 4rem 2rem;
-    
-    .spinner {
-      width: 40px;
-      height: 40px;
-      border: 3px solid var(--bs-border-color, #e9ecef);
-      border-top-color: var(--bs-primary, #0d6efd);
-      border-radius: 50%;
-      animation: spin 0.8s linear infinite;
-    }
-  }
-}
+@import '../scss/main';
 
-@keyframes spin {
-  to { transform: rotate(360deg); }
-}
-
-@media (max-width: 1024px) {
-  .vacancy-detail-view {
-    .detail-content {
-      grid-template-columns: 1fr;
-    }
-  }
-}
-
-@media (max-width: 768px) {
-  .vacancy-detail-view {
-    .detail-main {
-      .vacancy-header {
-        flex-direction: column;
-      }
-      
-      .vacancy-meta-grid {
-        grid-template-columns: 1fr;
-      }
-    }
-  }
+.vacancy-html-content {
+  font-size: 0.9rem;
+  line-height: 1.6;
+  :deep(ul) { padding-left: 1.25rem; }
+  :deep(p)  { margin-bottom: 0.5rem; }
 }
 </style>

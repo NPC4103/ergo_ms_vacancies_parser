@@ -1,22 +1,23 @@
 <template>
-  <div class="vp-task-progress">
-    <div class="vp-progress-header">
-      <span class="vp-progress-label">Прогресс</span>
-      <span class="vp-progress-value">{{ task.progress_percent }}%</span>
+  <div>
+    <div class="d-flex justify-content-between align-items-center mb-1">
+      <small class="text-secondary">{{ label }}</small>
+      <small class="fw-semibold">{{ percent }}%</small>
     </div>
-    <div class="vp-progress-bar">
-      <div 
-        class="vp-progress-fill" 
-        :class="getProgressBarClass()"
-        :style="{ width: task.progress_percent + '%' }"
+    <div class="progress" style="height: 8px; border-radius: 4px;">
+      <div
+        class="progress-bar"
+        :class="barClass"
         role="progressbar"
-        :aria-valuenow="task.progress_percent"
+        :style="{ width: percent + '%' }"
+        :aria-valuenow="percent"
         aria-valuemin="0"
         aria-valuemax="100"
       ></div>
     </div>
-    <div class="vp-progress-info">
-      {{ task.completed_items }} / {{ task.total_items }}
+    <div class="d-flex justify-content-between mt-1" v-if="showCounts">
+      <small class="text-secondary">{{ completed }} / {{ total }}</small>
+      <small class="text-danger" v-if="failed > 0">{{ failed }} ошибок</small>
     </div>
   </div>
 </template>
@@ -25,26 +26,27 @@
 import { computed } from 'vue'
 
 const props = defineProps({
-  task: {
-    type: Object,
-    required: true
-  }
+  completed:  { type: Number, default: 0 },
+  total:      { type: Number, default: 0 },
+  failed:     { type: Number, default: 0 },
+  status:     { type: String, default: 'running' },
+  label:      { type: String, default: 'Прогресс' },
+  showCounts: { type: Boolean, default: true }
 })
 
-function getProgressBarClass() {
-  if (props.task.status === 'completed') {
-    return 'vp-progress-success'
-  } else if (props.task.status === 'failed') {
-    return 'vp-progress-danger'
-  } else if (props.task.status === 'paused') {
-    return 'vp-progress-warning'
-  } else if (props.task.status === 'running') {
-    return 'vp-progress-primary vp-progress-animated'
-  }
-  return 'vp-progress-secondary'
-}
-</script>
+const percent = computed(() => {
+  if (!props.total) return 0
+  return Math.min(100, Math.round((props.completed / props.total) * 100))
+})
 
-<style lang="scss" scoped>
-@import '../scss/components/task-progress';
-</style>
+const barClass = computed(() => {
+  const map = {
+    completed: 'bg-success',
+    failed:    'bg-danger',
+    paused:    'bg-warning',
+    stopped:   'bg-secondary'
+  }
+  const base = map[props.status] || 'bg-primary'
+  return [base, props.status === 'running' ? 'progress-bar-animated progress-bar-striped' : '']
+})
+</script>

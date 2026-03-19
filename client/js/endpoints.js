@@ -46,6 +46,20 @@ export const endpoints = {
   statistics: {
     list: 'vacancies_parser/statistics/',
     detail: id => `vacancies_parser/statistics/${id}/`
+  },
+
+  // Мониторинг системных/внешних задач
+  taskRuns: {
+    list: 'vacancies_parser/task-runs/',
+    detail: id => `vacancies_parser/task-runs/${id}/`
+  },
+  externalApiEvents: {
+    list: 'vacancies_parser/external-api-events/',
+    detail: id => `vacancies_parser/external-api-events/${id}/`
+  },
+  systemJobs: {
+    list: 'vacancies_parser/system-jobs/',
+    run: id => `vacancies_parser/system-jobs/${id}/run/`
   }
 }
 

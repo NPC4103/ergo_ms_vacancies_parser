@@ -38,38 +38,42 @@ class SuperjobCeleryBeatConfig(CeleryBeatModuleConfig):
     def get_beat_schedule(self) -> Dict[str, Dict[str, Any]]:
         return {
             # ============================================================
-            # ЕЖЕДНЕВНЫЙ ПАРСИНГ IT-КАТАЛОГА (высший приоритет)
-            # Полный обход каталога 33 (IT) — основной источник вакансий
-            # Первый ночной запуск дня: 02:00 (разведён с Habr 02:30)
+            # ЕЖЕДНЕВНЫЙ ПАРСИНГ IT-КАТАЛОГА (высший приоритет) — новый pipeline
             # ============================================================
             'sj-daily-it-catalogue': {
-                'task': 'modules.vacancies_parser.api.superjob.tasks.parse_superjob_by_catalogues_task',
+                'task': 'vacancies_parser.tasks.create_parsing_task',
                 'schedule': crontab(minute=0, hour=2),
+                'args': [
+                    'superjob',
+                    'api',
+                    {'catalogues': str(IT_CATALOGUE_ID), 'pages': 100, 'count': 100, 'delay': 1.0},
+                ],
                 'kwargs': {
-                    'catalogue_ids': [IT_CATALOGUE_ID],
-                    'max_pages_per_catalogue': 500,
-                    'delay': 1.0,
+                    'name': 'SJ: ежедневный парсинг IT-каталога',
                 },
                 'options': {
-                    'queue': 'superjob',
+                    'queue': 'vacancies_parser',
                     'priority': 10,
                     'expires': 6 * 60 * 60,
                 }
             },
 
             # ============================================================
-            # МЕСЯЧНЫЙ ГЛУБОКИЙ ПАРСИНГ (monthly, 1-е число 01:00)
+            # МЕСЯЧНЫЙ ГЛУБОКИЙ ПРОГОН — новый pipeline
             # ============================================================
             'sj-monthly-deep-scan': {
-                'task': 'modules.vacancies_parser.api.superjob.tasks.parse_superjob_by_catalogues_task',
+                'task': 'vacancies_parser.tasks.create_parsing_task',
                 'schedule': crontab(minute=0, hour=1, day_of_month='1'),
+                'args': [
+                    'superjob',
+                    'api',
+                    {'catalogues': str(IT_CATALOGUE_ID), 'pages': 100, 'count': 100, 'delay': 1.2, 'keyword': 'IT'},
+                ],
                 'kwargs': {
-                    'catalogue_ids': [IT_CATALOGUE_ID],
-                    'max_pages_per_catalogue': 500,
-                    'delay': 1.2,
+                    'name': 'SJ: ежемесячный глубокий прогон',
                 },
                 'options': {
-                    'queue': 'superjob',
+                    'queue': 'vacancies_parser',
                     'priority': 9,
                     'expires': 12 * 60 * 60,
                 }

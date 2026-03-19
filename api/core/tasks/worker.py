@@ -317,7 +317,8 @@ def _save_normalized_vacancy(vacancy_data: dict, task, item):
         )
 
         if normalized is None:
-            normalized = NormalizedVacancyModel.objects.create(**mapped)
+            # Новый экземпляр: создаем запись и инициализируем sources_meta автоматически
+            normalized = NormalizedVacancyModel.upsert_from_normalized(mapped, task_item=item)
             return normalized, True, False
 
         changed_fields = _collect_normalized_changes(normalized, mapped)

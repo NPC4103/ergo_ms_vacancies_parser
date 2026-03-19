@@ -304,6 +304,13 @@ class NormalizedVacancy(models.Model):
         help_text="Полный ответ от источника для отладки/reprocessing"
     )
     
+    sources_meta = models.JSONField(
+        default=list,
+        blank=True,
+        verbose_name="Источники",
+        help_text="Список площадок, на которых размещена вакансия"
+    )
+    
     # ============================================================
     # МЕТАДАННЫЕ
     # ============================================================
@@ -393,9 +400,16 @@ class NormalizedVacancy(models.Model):
         ]
     
     def save(self, *args, **kwargs):
-        """Переопределение save для генерации хэша дедупликации"""
+        """Переопределение save для генерации хэша дедупликации и заполнения sources_meta"""
         if not self.deduplication_hash:
             self.deduplication_hash = self.generate_deduplication_hash()
+        # Автозаполнение sources_meta для одиночных записей
+        if not self.sources_meta:
+            self.sources_meta = [{
+                'source': self.source,
+                'source_id': self.source_id,
+                'url': self.source_url,
+            }]
         super().save(*args, **kwargs)
     
     def clean(self):
@@ -436,6 +450,54 @@ class NormalizedVacancy(models.Model):
         """Обновление хэша для дедупликации"""
         self.deduplication_hash = self.generate_deduplication_hash()
         self.save(update_fields=['deduplication_hash'])
+    
+    @classmethod
+    def upsert_from_normalized(cls, normalized_data: dict, *, task_item=None) -> "NormalizedVacancy":
+        """
+        Upsert вакансии по deduplication_hash с агрегированием источников.
+        
+        normalized_data должен содержать как минимум:
+        - source, source_id, source_url, title, company_name, area_name/salary_*
+        """
+        temp = cls(**{
+            k: v for k, v in normalized_data.items()
+            if k in {f.name for f in cls._meta.get_fields() if hasattr(f, "column")}
+        })
+        dedup_hash = temp.generate_deduplication_hash()
+        
+        vacancy = (
+            cls.objects
+            .select_for_update()
+            .filter(deduplication_hash=dedup_hash)
+            .first()
+        )
+        
+        if vacancy is None:
+            vacancy = cls.objects.create(
+                **normalized_data,
+                deduplication_hash=dedup_hash,
+            )
+            return vacancy
+        
+        sources_meta = vacancy.sources_meta or []
+        current_source = normalized_data.get("source")
+        current_source_id = normalized_data.get("source_id")
+        current_url = normalized_data.get("source_url")
+        
+        if current_source and current_source_id:
+            exists = any(
+                s.get("source") == current_source and s.get("source_id") == current_source_id
+                for s in sources_meta
+            )
+            if not exists:
+                sources_meta.append({
+                    "source": current_source,
+                    "source_id": current_source_id,
+                    "url": current_url,
+                })
+                vacancy.sources_meta = sources_meta
+        
+        return vacancy
     
     def get_salary_display(self) -> str:
         """Форматированная зарплата для отображения"""

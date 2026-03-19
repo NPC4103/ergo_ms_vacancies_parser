@@ -1,5 +1,5 @@
 import { ref } from 'vue'
-import { vacanciesApi } from '../js/vacanciesApi'
+import { sourceApi } from '../js/api'
 import { useToast } from 'vue-toastification'
 
 export function useParsing() {
@@ -28,26 +28,26 @@ export function useParsing() {
   }
 
   const parseByText = (source, config = {}) =>
-    _wrapParsing('Парсинг по тексту', () => vacanciesApi.parseByText(source, config))
+    _wrapParsing('Парсинг по тексту', () => sourceApi.parseByText(source, config))
 
   const parseByRoles = (source, config = {}) =>
-    _wrapParsing('Парсинг по ролям', () => vacanciesApi.parseByRoles(source, config))
+    _wrapParsing('Парсинг по ролям', () => sourceApi.parseByRoles(source, config))
 
   const parseByTechnologies = (source, config = {}) =>
-    _wrapParsing('Парсинг по технологиям', () => vacanciesApi.parseByTechnologies(source, config))
+    _wrapParsing('Парсинг по технологиям', () => sourceApi.parseByTechnologies(source, config))
 
   const parseByCatalogues = (source, config = {}) =>
-    _wrapParsing('Парсинг по каталогам', () => vacanciesApi.parseByCatalogues(source, config))
+    _wrapParsing('Парсинг по каталогам', () => sourceApi.parseByCatalogues(source, config))
 
   const parseAll = (source, config = {}) =>
-    _wrapParsing('Универсальный парсинг', () => vacanciesApi.parseAll(source, config))
+    _wrapParsing('Универсальный парсинг', () => sourceApi.parseAll(source, config))
 
   const checkTaskStatus = async (source, taskIdToCheck = null) => {
     const id = taskIdToCheck || taskId.value
     if (!id) return null
 
     try {
-      const response = await vacanciesApi.getTaskStatus(source, id)
+      const response = await sourceApi.getTaskStatus(source, id)
       taskStatus.value = response.data
       return response.data
     } catch (err) {

@@ -31,6 +31,7 @@ from .tasks import (
 from .parsers.discovery import get_catalogues_list
 from celery.result import AsyncResult
 from ..core.celery_tasks import create_parsing_task
+from modules.vacancies_parser.api.core.views import StandardResultsSetPagination
 
 logger = logging.getLogger('modules.vacancies_parser.superjob')
 
@@ -98,8 +99,10 @@ def _resolve_parsing_mode(request):
 class VacancyViewSet(SwaggerSafeMixin, viewsets.ReadOnlyModelViewSet):
     """ViewSet для работы с вакансиями SuperJob"""
     permission_classes = [permissions.IsAuthenticated]
+    pagination_class = StandardResultsSetPagination
     filter_backends = [DjangoFilterBackend, SearchFilter, OrderingFilter]
-    search_fields = ['title', 'company_name', 'description', 'city', 'professional_role']
+    # description может быть очень большим и сильно замедляет icontains-поиск
+    search_fields = ['title', 'company_name', 'city', 'professional_role']
     ordering_fields = ['published_at', 'created_at', 'salary_from', 'salary_to', 'title']
     ordering = ['-published_at']
     filterset_fields = {
@@ -119,7 +122,12 @@ class VacancyViewSet(SwaggerSafeMixin, viewsets.ReadOnlyModelViewSet):
         if self.is_swagger_fake_view():
             return SuperJobVacancy.objects.none()
 
-        queryset = SuperJobVacancy.objects.all()
+        queryset = SuperJobVacancy.objects.all().defer(
+            'description',
+            'requirements',
+            'responsibilities',
+            'skills',
+        )
 
         key_skills = self.request.query_params.getlist('key_skills')
         if key_skills:

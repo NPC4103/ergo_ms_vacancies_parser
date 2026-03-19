@@ -7,7 +7,7 @@
       "list": [
         {
           "routeName": "VacanciesDashboard",
-          "name": "Панель управления"
+          "name": "Дашборд"
         },
         {
           "routeName": "VacanciesParser",
@@ -20,6 +20,14 @@
         {
           "routeName": "VacanciesList",
           "name": "Вакансии"
+        },
+        {
+          "routeName": "VacancyStats",
+          "name": "Статистика"
+        },
+        {
+          "routeName": "ParsingControl",
+          "name": "Управление парсингом"
         }
       ]
     }
