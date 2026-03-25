@@ -15,6 +15,7 @@ from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.pagination import PageNumberPagination
 from django.db.models import Q, Count
+from django.db.models.deletion import ProtectedError
 from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework.filters import SearchFilter, OrderingFilter
 
@@ -138,6 +139,29 @@ class ParsingTaskViewSet(SwaggerSafeMixin, viewsets.ModelViewSet):
     def perform_create(self, serializer):
         """Создание задачи через Celery"""
         return serializer.save()
+
+    def destroy(self, request, *args, **kwargs):
+        """
+        Удаление задачи.
+
+        Явно запрещаем удаление активных задач, чтобы не оставлять "висящие" leases/воркеры.
+        Также возвращаем внятные ошибки при проблемах с ограничениями БД.
+        """
+        task = self.get_object()
+
+        if task.is_active:
+            return Response(
+                {'detail': 'Нельзя удалить активную задачу. Сначала остановите её.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        try:
+            return super().destroy(request, *args, **kwargs)
+        except ProtectedError:
+            return Response(
+                {'detail': 'Нельзя удалить задачу: существуют связанные записи (PROTECT).'},
+                status=status.HTTP_409_CONFLICT,
+            )
 
     @action(detail=True, methods=['get'], url_path='progress')
     def progress(self, request, pk=None):

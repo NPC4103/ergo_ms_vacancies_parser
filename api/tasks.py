@@ -16,8 +16,12 @@ tasks_file_path = os.path.join(current_dir, 'core', 'celery_tasks.py')
 
 # Загружаем модуль явно
 spec = importlib.util.spec_from_file_location('modules.vacancies_parser.api.core.celery_tasks', tasks_file_path)
+if spec is None:
+    raise ImportError(f'Не удалось загрузить spec для {tasks_file_path}')
 core_tasks_module = importlib.util.module_from_spec(spec)
 sys.modules['modules.vacancies_parser.api.core.celery_tasks'] = core_tasks_module
+if spec.loader is None:
+    raise ImportError(f'Не удалось загрузить loader для {tasks_file_path}')
 spec.loader.exec_module(core_tasks_module)
 
 # Экспортируем все задачи для Celery autodiscover
@@ -31,6 +35,7 @@ cleanup_monitoring_retention = core_tasks_module.cleanup_monitoring_retention
 pause_task = core_tasks_module.pause_task
 resume_task = core_tasks_module.resume_task
 stop_task = core_tasks_module.stop_task
+discover_and_start_task = getattr(core_tasks_module, 'discover_and_start_task', None)
 
 # Задачи нормализации
 from .core.celery_tasks_normalization import (  # noqa: E402
@@ -40,6 +45,7 @@ from .core.celery_tasks_normalization import (  # noqa: E402
 
 __all__ = [
     'create_parsing_task',
+    'discover_and_start_task',
     'coordinate_parsing_task',
     'finalize_parsing_task',
     'parse_items_worker',

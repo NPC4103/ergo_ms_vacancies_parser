@@ -473,6 +473,9 @@ class NormalizedVacancy(models.Model):
         )
         
         if vacancy is None:
+            # normalized_data может уже содержать deduplication_hash (например, после маппинга),
+            # поэтому передаем его ровно один раз.
+            normalized_data = {k: v for k, v in normalized_data.items() if k != 'deduplication_hash'}
             vacancy = cls.objects.create(
                 **normalized_data,
                 deduplication_hash=dedup_hash,
